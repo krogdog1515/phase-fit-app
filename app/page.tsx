@@ -9,7 +9,6 @@ import supabase from "./lib/supabase";
 export default function Home() {
   const router = useRouter();
 
-  const [user, setUser] = useState<any>(null);
   const [workouts, setWorkouts] = useState<any[]>([]);
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -23,8 +22,6 @@ export default function Home() {
         router.push("/login");
         return;
       }
-
-      setUser(data.user);
 
       const { data: workoutsData, error } = await supabase
         .from("workouts")
@@ -42,7 +39,7 @@ export default function Home() {
     init();
   }, [router]);
 
-  // ✅ FILTERED WORKOUTS (NO STATE, NO EFFECT)
+  // ✅ SAFE FILTER (NO useEffect)
   const filteredWorkouts =
     phaseFilter === "all"
       ? workouts
@@ -62,12 +59,8 @@ export default function Home() {
     <main className="min-h-screen bg-[#f9f7f7] p-6">
       <div className="max-w-xl mx-auto space-y-6">
 
-        {/* HEADER */}
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Phase Fit
-          </h1>
-
+          <h1 className="text-2xl font-bold text-gray-900">Phase Fit</h1>
           <button
             onClick={() => router.push("/generate")}
             className="px-4 py-2 rounded bg-[#7a1f2a] text-white text-sm font-semibold"
@@ -76,7 +69,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* TODAY'S WORKOUT */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-2">
           <p className="text-sm text-gray-500">Today’s Recommendation</p>
 
@@ -99,7 +91,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* PRIMARY CTA */}
         <button
           onClick={() => router.push("/generate")}
           className="w-full py-3 rounded font-semibold bg-[#7a1f2a] text-white"
@@ -107,7 +98,6 @@ export default function Home() {
           Generate New Workout
         </button>
 
-        {/* FILTER + TITLE */}
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-semibold text-gray-900">
             Workout History
@@ -126,7 +116,6 @@ export default function Home() {
           </select>
         </div>
 
-        {/* WORKOUT LIST */}
         <div className="space-y-3">
           {filteredWorkouts.length === 0 ? (
             <p className="text-gray-500">No workouts found.</p>
