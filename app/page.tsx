@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable react-hooks/set-state-in-effect */
 
 "use client";
 
@@ -12,7 +11,6 @@ export default function Home() {
 
   const [user, setUser] = useState<any>(null);
   const [workouts, setWorkouts] = useState<any[]>([]);
-  const [filteredWorkouts, setFilteredWorkouts] = useState<any[]>([]);
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +34,6 @@ export default function Home() {
 
       if (!error) {
         setWorkouts(workoutsData || []);
-        setFilteredWorkouts(workoutsData || []);
       }
 
       setLoading(false);
@@ -45,16 +42,11 @@ export default function Home() {
     init();
   }, [router]);
 
-  // 🔍 Filter
-  useEffect(() => {
-    if (phaseFilter === "all") {
-      setFilteredWorkouts(workouts);
-    } else {
-      setFilteredWorkouts(
-        workouts.filter((w) => w.phase === phaseFilter)
-      );
-    }
-  }, [phaseFilter, workouts]);
+  // ✅ FILTERED WORKOUTS (NO STATE, NO EFFECT)
+  const filteredWorkouts =
+    phaseFilter === "all"
+      ? workouts
+      : workouts.filter((w) => w.phase === phaseFilter);
 
   const latestWorkout = workouts[0];
 
