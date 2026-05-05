@@ -11,7 +11,7 @@ export default function WorkoutPage() {
   const router = useRouter();
 
   const [workout, setWorkout] = useState<any>(null);
-  const [logs, setLogs] = useState<any>({});
+  const [movements, setMovements] = useState<any[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
 
   const [completed, setCompleted] = useState("");
@@ -30,32 +30,51 @@ export default function WorkoutPage() {
       setWorkout(data);
 
       if (data?.structure) {
-        const initialLogs: any = {};
-        data.structure.forEach((item: any) => {
-          initialLogs[item.movement] = Array.from(
-            { length: item.sets },
-            () => ({ weight: "", reps: "" })
-          );
-        });
-        setLogs(initialLogs);
+        const initialized = data.structure.map((item: any) => ({
+          name: item.movement,
+          original: item.movement,
+          sets: item.sets,
+          reps: item.reps,
+          rir: item.rir,
+          note: item.note,
+          logs: Array.from({ length: item.sets }, () => ({
+            weight: "",
+            reps: "",
+          })),
+          notes: "",
+        }));
+
+        setMovements(initialized);
       }
     };
 
     fetchWorkout();
   }, [id]);
 
+  // 🔧 Update movement name
+  const updateMovementName = (index: number, value: string) => {
+    const updated = [...movements];
+    updated[index].name = value;
+    setMovements(updated);
+  };
+
+  // 🔧 Update notes
+  const updateNotes = (index: number, value: string) => {
+    const updated = [...movements];
+    updated[index].notes = value;
+    setMovements(updated);
+  };
+
+  // 🔧 Update sets
   const updateSet = (
-    movement: string,
-    index: number,
+    movementIndex: number,
+    setIndex: number,
     field: string,
     value: string
   ) => {
-    const updated = { ...logs };
-    updated[movement][index] = {
-      ...updated[movement][index],
-      [field]: value,
-    };
-    setLogs(updated);
+    const updated = [...movements];
+    updated[movementIndex].logs[setIndex][field] = value;
+    setMovements(updated);
   };
 
   if (!workout) {
@@ -84,7 +103,7 @@ export default function WorkoutPage() {
           </button>
         </div>
 
-        {/* COACHING (HERO) */}
+        {/* COACHING */}
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-3">
           <p className="text-sm text-[#7a1f2a] font-semibold">
             Cycle-Based Coaching
@@ -117,20 +136,24 @@ export default function WorkoutPage() {
             Your Plan
           </h2>
 
-          {workout.structure?.map((item: any, i: number) => (
+          {movements.map((item, i) => (
             <div
               key={i}
               className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-3"
             >
-              <div>
-                <h3 className="font-semibold text-gray-900">
-                  {item.movement}
-                </h3>
 
-                <p className="text-sm text-gray-500">
-                  {item.sets} sets • {item.reps} • RIR {item.rir}
-                </p>
-              </div>
+              {/* EDITABLE MOVEMENT */}
+              <input
+                value={item.name}
+                onChange={(e) =>
+                  updateMovementName(i, e.target.value)
+                }
+                className="w-full p-2 border border-gray-300 rounded font-semibold"
+              />
+
+              <p className="text-sm text-gray-500">
+                {item.sets} sets • {item.reps} • RIR {item.rir}
+              </p>
 
               {item.note && (
                 <p className="text-sm text-[#7a1f2a]">
@@ -140,18 +163,13 @@ export default function WorkoutPage() {
 
               {/* LOGGING */}
               <div className="space-y-2">
-                {logs[item.movement]?.map((set: any, idx: number) => (
+                {item.logs.map((set: any, idx: number) => (
                   <div key={idx} className="flex gap-2">
                     <input
                       placeholder="Weight"
                       value={set.weight}
                       onChange={(e) =>
-                        updateSet(
-                          item.movement,
-                          idx,
-                          "weight",
-                          e.target.value
-                        )
+                        updateSet(i, idx, "weight", e.target.value)
                       }
                       className="w-full p-2 border border-gray-300 rounded"
                     />
@@ -159,18 +177,24 @@ export default function WorkoutPage() {
                       placeholder="Reps"
                       value={set.reps}
                       onChange={(e) =>
-                        updateSet(
-                          item.movement,
-                          idx,
-                          "reps",
-                          e.target.value
-                        )
+                        updateSet(i, idx, "reps", e.target.value)
                       }
                       className="w-full p-2 border border-gray-300 rounded"
                     />
                   </div>
                 ))}
               </div>
+
+              {/* NOTES */}
+              <textarea
+                placeholder="Notes (optional)"
+                value={item.notes}
+                onChange={(e) =>
+                  updateNotes(i, e.target.value)
+                }
+                className="w-full p-2 border border-gray-300 rounded"
+              />
+
             </div>
           ))}
         </div>
@@ -183,7 +207,7 @@ export default function WorkoutPage() {
           Finish Workout
         </button>
 
-        {/* FEEDBACK MODAL */}
+        {/* FEEDBACK */}
         {showFeedback && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4">
@@ -192,75 +216,22 @@ export default function WorkoutPage() {
                 How did it go?
               </h2>
 
-              {/* COMPLETION */}
-              <div>
-                <p className="text-sm text-gray-500 mb-1">
-                  Completion
-                </p>
-                <div className="flex gap-2">
-                  {["Completed", "Partial", "Skipped"].map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => setCompleted(c)}
-                      className={`px-3 py-1 rounded border ${
-                        completed === c
-                          ? "bg-[#7a1f2a] text-white"
-                          : ""
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* DIFFICULTY */}
-              <div>
-                <p className="text-sm text-gray-500 mb-1">
-                  Difficulty
-                </p>
-                <div className="flex gap-2">
-                  {["Too Easy", "Just Right", "Too Hard"].map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDifficulty(d)}
-                      className={`px-3 py-1 rounded border ${
-                        difficulty === d
-                          ? "bg-[#7a1f2a] text-white"
-                          : ""
-                      }`}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ENERGY */}
-              <div>
-                <p className="text-sm text-gray-500 mb-1">
-                  Energy After
-                </p>
-                <div className="flex gap-2">
-                  {["Worse", "Same", "Better"].map((e) => (
-                    <button
-                      key={e}
-                      onClick={() => setEnergyShift(e)}
-                      className={`px-3 py-1 rounded border ${
-                        energyShift === e
-                          ? "bg-[#7a1f2a] text-white"
-                          : ""
-                      }`}
-                    >
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* SAVE */}
               <button
                 onClick={async () => {
+                  // 🔥 SAVE LOGS
+                  const logsToInsert = movements.map((m) => ({
+                    workout_id: workout.id,
+                    movement: m.name,
+                    original_movement: m.original,
+                    final_movement: m.name,
+                    notes: m.notes,
+                  }));
+
+                  await supabase
+                    .from("workout_logs")
+                    .insert(logsToInsert);
+
+                  // 🔥 SAVE FEEDBACK
                   await supabase
                     .from("workouts")
                     .update({
