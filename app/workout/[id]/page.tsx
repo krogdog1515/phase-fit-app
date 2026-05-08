@@ -1,80 +1,233 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 "use client";
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import supabase from "../../lib/supabase";
+import {
+  DIFFICULTY_LABELS,
+  DIFFICULTY_VALUES,
+  normalizeDifficulty,
+  normalizeDifficultyForStorage,
+} from "../../lib/difficulty";
+
+type SetLog = {
+  weight: string;
+  reps: string;
+};
+
+type MovementState = {
+  name: string;
+  original: string;
+  sets: number;
+  reps: string;
+  rir: string;
+  note: string;
+  logs: SetLog[];
+  notes: string;
+};
+
+type WorkoutRow = {
+  id: string;
+  cycle_guidance?: {
+    summary?: string;
+    during_workout?: string;
+    adjustments?: string;
+  };
+  structure?: unknown;
+};
+
+function parsePositiveNumber(raw: string): number | null {
+  const t = raw.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
 
 export default function WorkoutPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const workoutId =
+    typeof params.id === "string"
+      ? params.id
+      : Array.isArray(params.id)
+        ? params.id[0]
+        : "";
   const router = useRouter();
 
-  const [workout, setWorkout] = useState<any>(null);
-  const [movements, setMovements] = useState<any[]>([]);
+  const [workout, setWorkout] = useState<WorkoutRow | null>(null);
+  const [movements, setMovements] = useState<MovementState[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
 
   const [completed, setCompleted] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [energyShift, setEnergyShift] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // 🔄 Fetch workout
   useEffect(() => {
     const fetchWorkout = async () => {
       const { data } = await supabase
         .from("workouts")
         .select("*")
-        .eq("id", id)
+        .eq("id", workoutId)
         .single();
 
-      setWorkout(data);
+      setWorkout(data as WorkoutRow);
 
-      if (data?.structure) {
-        const initialized = data.structure.map((item: any) => ({
-          name: item.movement,
-          original: item.movement,
-          sets: item.sets,
-          reps: item.reps,
-          rir: item.rir,
-          note: item.note,
-          logs: Array.from({ length: item.sets }, () => ({
-            weight: "",
-            reps: "",
-          })),
-          notes: "",
-        }));
+      setDifficulty(normalizeDifficulty(data?.difficulty) ?? "");
+
+      if (data?.structure && Array.isArray(data.structure)) {
+        const initialized = (data.structure as Record<string, unknown>[]).map(
+          (item) => ({
+            name: String(item.movement ?? ""),
+            original: String(item.movement ?? ""),
+            sets: Number(item.sets) || 0,
+            reps: String(item.reps ?? ""),
+            rir: String(item.rir ?? ""),
+            note: String(item.note ?? ""),
+            logs: Array.from(
+              { length: Number(item.sets) || 0 },
+              () =>
+                ({
+                  weight: "",
+                  reps: "",
+                }) satisfies SetLog
+            ),
+            notes: "",
+          })
+        );
 
         setMovements(initialized);
       }
     };
 
     fetchWorkout();
-  }, [id]);
+  }, [workoutId]);
 
-  // 🔧 Update movement name
   const updateMovementName = (index: number, value: string) => {
     const updated = [...movements];
     updated[index].name = value;
     setMovements(updated);
   };
 
-  // 🔧 Update notes
   const updateNotes = (index: number, value: string) => {
     const updated = [...movements];
     updated[index].notes = value;
     setMovements(updated);
   };
 
-  // 🔧 Update sets
   const updateSet = (
     movementIndex: number,
     setIndex: number,
-    field: string,
+    field: keyof SetLog,
     value: string
   ) => {
     const updated = [...movements];
     updated[movementIndex].logs[setIndex][field] = value;
     setMovements(updated);
+  };
+
+  function buildLogRows(): Array<{
+    workout_id: string;
+    movement: string;
+    original_movement: string;
+    final_movement: string;
+    notes: string | null;
+    weight: number;
+    reps: number;
+    set_number: number;
+  }> {
+    if (!workout) return [];
+
+    const rows: Array<{
+      workout_id: string;
+      movement: string;
+      original_movement: string;
+      final_movement: string;
+      notes: string | null;
+      weight: number;
+      reps: number;
+      set_number: number;
+    }> = [];
+
+    for (const m of movements) {
+      m.logs.forEach((set, idx) => {
+        const w = parsePositiveNumber(set.weight);
+        const r = parsePositiveNumber(set.reps);
+        const emptyBoth =
+          set.weight.trim() === "" && set.reps.trim() === "";
+        if (emptyBoth) return;
+        if (w === null || r === null) return;
+
+        rows.push({
+          workout_id: workout.id,
+          movement: m.name,
+          original_movement: m.original,
+          final_movement: m.name,
+          notes: idx === 0 ? (m.notes.trim() || null) : null,
+          weight: w,
+          reps: Math.round(r),
+          set_number: idx + 1,
+        });
+      });
+    }
+
+    return rows;
+  }
+
+  const saveWorkout = async () => {
+    if (!workout) return;
+
+    for (const m of movements) {
+      for (const set of m.logs) {
+        const wEmpty = set.weight.trim() === "";
+        const rEmpty = set.reps.trim() === "";
+        if (wEmpty !== rEmpty) {
+          alert(
+            "Each started set needs both weight and reps (or leave both blank)."
+          );
+          return;
+        }
+      }
+    }
+
+    const logsToInsert = buildLogRows();
+    if (logsToInsert.length === 0) {
+      alert(
+        "Log at least one set with weight and reps so future workouts can progress."
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    const { error: logError } = await supabase
+      .from("workout_logs")
+      .insert(logsToInsert);
+
+    if (logError) {
+      console.error(logError);
+      alert(logError.message || "Could not save workout logs.");
+      setSaving(false);
+      return;
+    }
+
+    const { error: workoutError } = await supabase
+      .from("workouts")
+      .update({
+        completed,
+        difficulty: normalizeDifficultyForStorage(difficulty),
+        energy_shift: energyShift,
+      })
+      .eq("id", workout.id);
+
+    if (workoutError) {
+      console.error(workoutError);
+      alert(workoutError.message || "Could not save workout feedback.");
+      setSaving(false);
+      return;
+    }
+
+    router.push("/");
   };
 
   if (!workout) {
@@ -88,14 +241,13 @@ export default function WorkoutPage() {
   return (
     <main className="min-h-screen bg-[#f9f7f7] p-6">
       <div className="max-w-xl mx-auto space-y-6">
-
-        {/* HEADER */}
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-900">
             Today’s Workout
           </h1>
 
           <button
+            type="button"
             onClick={() => router.push("/")}
             className="text-sm text-[#7a1f2a] font-medium"
           >
@@ -103,7 +255,6 @@ export default function WorkoutPage() {
           </button>
         </div>
 
-        {/* COACHING */}
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-3">
           <p className="text-sm text-[#7a1f2a] font-semibold">
             Cycle-Based Coaching
@@ -130,24 +281,17 @@ export default function WorkoutPage() {
           </div>
         </div>
 
-        {/* PLAN */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Your Plan
-          </h2>
+          <h2 className="text-lg font-semibold text-gray-900">Your Plan</h2>
 
           {movements.map((item, i) => (
             <div
               key={i}
               className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-3"
             >
-
-              {/* EDITABLE MOVEMENT */}
               <input
                 value={item.name}
-                onChange={(e) =>
-                  updateMovementName(i, e.target.value)
-                }
+                onChange={(e) => updateMovementName(i, e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded font-semibold"
               />
 
@@ -156,16 +300,18 @@ export default function WorkoutPage() {
               </p>
 
               {item.note && (
-                <p className="text-sm text-[#7a1f2a]">
-                  {item.note}
-                </p>
+                <p className="text-sm text-[#7a1f2a]">{item.note}</p>
               )}
 
-              {/* LOGGING */}
               <div className="space-y-2">
-                {item.logs.map((set: any, idx: number) => (
-                  <div key={idx} className="flex gap-2">
+                {item.logs.map((set, idx) => (
+                  <div key={idx} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                    <span className="text-xs text-gray-500 w-14 shrink-0">
+                      Set {idx + 1}
+                    </span>
                     <input
+                      type="text"
+                      inputMode="decimal"
                       placeholder="Weight"
                       value={set.weight}
                       onChange={(e) =>
@@ -174,6 +320,8 @@ export default function WorkoutPage() {
                       className="w-full p-2 border border-gray-300 rounded"
                     />
                     <input
+                      type="text"
+                      inputMode="numeric"
                       placeholder="Reps"
                       value={set.reps}
                       onChange={(e) =>
@@ -185,69 +333,99 @@ export default function WorkoutPage() {
                 ))}
               </div>
 
-              {/* NOTES */}
               <textarea
                 placeholder="Notes (optional)"
                 value={item.notes}
-                onChange={(e) =>
-                  updateNotes(i, e.target.value)
-                }
+                onChange={(e) => updateNotes(i, e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded"
               />
-
             </div>
           ))}
         </div>
 
-        {/* CTA */}
         <button
+          type="button"
           onClick={() => setShowFeedback(true)}
           className="w-full py-3 rounded font-semibold bg-[#7a1f2a] text-white"
         >
           Finish Workout
         </button>
 
-        {/* FEEDBACK */}
         {showFeedback && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4">
-
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
               <h2 className="text-lg font-semibold text-gray-900">
                 How did it go?
               </h2>
 
-              <button
-                onClick={async () => {
-                  // 🔥 SAVE LOGS
-                  const logsToInsert = movements.map((m) => ({
-                    workout_id: workout.id,
-                    movement: m.name,
-                    original_movement: m.original,
-                    final_movement: m.name,
-                    notes: m.notes,
-                  }));
+              <p className="text-sm text-gray-600">
+                Your logged sets (weight × reps) are saved for progressive
+                overload. Add quick feedback below—coaching uses this on the
+                next generation.
+              </p>
 
-                  await supabase
-                    .from("workout_logs")
-                    .insert(logsToInsert);
+              <div>
+                <label className="text-sm text-gray-500">Completed</label>
+                <select
+                  value={completed}
+                  onChange={(e) => setCompleted(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded"
+                >
+                  <option value="">Select</option>
+                  <option value="full">Full workout</option>
+                  <option value="partial">Partial</option>
+                  <option value="skipped">Skipped</option>
+                </select>
+              </div>
 
-                  // 🔥 SAVE FEEDBACK
-                  await supabase
-                    .from("workouts")
-                    .update({
-                      completed,
-                      difficulty,
-                      energy_shift: energyShift,
-                    })
-                    .eq("id", workout.id);
+              <div>
+                <label className="text-sm text-gray-500">Difficulty</label>
+                <select
+                  value={difficulty}
+                  onChange={(e) => setDifficulty(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded"
+                >
+                  <option value="">Select</option>
+                  {DIFFICULTY_VALUES.map((v) => (
+                    <option key={v} value={v}>
+                      {DIFFICULTY_LABELS[v]}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                  router.push("/");
-                }}
-                className="w-full bg-[#7a1f2a] text-white py-2 rounded"
-              >
-                Save & Finish
-              </button>
+              <div>
+                <label className="text-sm text-gray-500">Energy after</label>
+                <select
+                  value={energyShift}
+                  onChange={(e) => setEnergyShift(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded"
+                >
+                  <option value="">Select</option>
+                  <option value="better">Better</option>
+                  <option value="same">Same</option>
+                  <option value="worse">Worse</option>
+                </select>
+              </div>
 
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFeedback(false)}
+                  disabled={saving}
+                  className="flex-1 py-2 rounded border border-gray-300 text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveWorkout}
+                  disabled={saving}
+                  className="flex-1 bg-[#7a1f2a] text-white py-2 rounded font-semibold disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save & finish"}
+                </button>
+              </div>
             </div>
           </div>
         )}
