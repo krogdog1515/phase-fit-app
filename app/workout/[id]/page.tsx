@@ -34,7 +34,97 @@ type WorkoutRow = {
     adjustments?: string;
   };
   structure?: unknown;
+  completed?: string | null;
+  energy_shift?: string | null;
 };
+
+type WorkoutLogRow = {
+  movement: string;
+  original_movement: string | null;
+  final_movement: string | null;
+  notes: string | null;
+  weight: number | string | null;
+  reps: number | string | null;
+  set_number: number | null;
+  created_at?: string | null;
+};
+
+/** Keep latest row per movement slot + set when users save more than once. */
+function dedupeLogsByLatest(logs: WorkoutLogRow[]): WorkoutLogRow[] {
+  const best = new Map<string, WorkoutLogRow>();
+  for (const log of logs) {
+    const om = log.original_movement ?? "";
+    const sn = Number(log.set_number) || 0;
+    const key = `${om}|${sn}`;
+    const prev = best.get(key);
+    const t = log.created_at ? new Date(log.created_at).getTime() : 0;
+    const pt = prev?.created_at ? new Date(prev.created_at).getTime() : -1;
+    if (!prev || t >= pt) best.set(key, log);
+  }
+  return [...best.values()];
+}
+
+function mergeSavedLogsIntoMovements(
+  structureItems: Record<string, unknown>[],
+  base: MovementState[],
+  rawLogs: WorkoutLogRow[]
+): MovementState[] {
+  if (!rawLogs.length) return base;
+
+  const logs = dedupeLogsByLatest(rawLogs);
+
+  return base.map((mov, i) => {
+    const structureMovement = String(structureItems[i]?.movement ?? mov.original);
+    const rows = logs
+      .filter((l) => {
+        const om = String(l.original_movement ?? "");
+        if (om && om === structureMovement) return true;
+        if (!l.original_movement && String(l.movement) === structureMovement)
+          return true;
+        return false;
+      })
+      .sort(
+        (a, b) =>
+          (Number(a.set_number) || 0) - (Number(b.set_number) || 0)
+      );
+
+    if (rows.length === 0) return mov;
+
+    const logsFilled = mov.logs.map((slot, idx) => {
+      const row = rows.find((r) => Number(r.set_number) === idx + 1);
+      const w = row?.weight;
+      const r = row?.reps;
+      const wStr =
+        w != null && String(w).trim() !== "" && Number.isFinite(Number(w))
+          ? String(w)
+          : "";
+      const rStr =
+        r != null && String(r).trim() !== "" && Number.isFinite(Number(r))
+          ? String(r)
+          : "";
+      return { weight: wStr, reps: rStr };
+    });
+
+    const notesFromLog =
+      rows.find(
+        (r) => Number(r.set_number) === 1 && r.notes?.trim()
+      )?.notes?.trim() ??
+      rows.find((r) => r.notes?.trim())?.notes?.trim() ??
+      "";
+
+    const displayName =
+      rows.find((r) => r.final_movement?.trim())?.final_movement?.trim() ??
+      rows.find((r) => r.movement?.trim())?.movement?.trim() ??
+      mov.name;
+
+    return {
+      ...mov,
+      name: displayName || mov.name,
+      logs: logsFilled,
+      notes: notesFromLog || mov.notes,
+    };
+  });
+}
 
 function parsePositiveNumber(raw: string): number | null {
   const t = raw.trim();
@@ -65,38 +155,58 @@ export default function WorkoutPage() {
 
   useEffect(() => {
     const fetchWorkout = async () => {
-      const { data } = await supabase
-        .from("workouts")
-        .select("*")
-        .eq("id", workoutId)
-        .single();
+      const [{ data }, logsRes] = await Promise.all([
+        supabase.from("workouts").select("*").eq("id", workoutId).single(),
+        supabase
+          .from("workout_logs")
+          .select(
+            "movement, original_movement, final_movement, notes, weight, reps, set_number, created_at"
+          )
+          .eq("workout_id", workoutId),
+      ]);
+
+      if (logsRes.error) {
+        console.error(logsRes.error);
+      }
+
+      const logsRaw = !logsRes.error && logsRes.data ? logsRes.data : [];
 
       setWorkout(data as WorkoutRow);
 
       setDifficulty(normalizeDifficulty(data?.difficulty) ?? "");
+      setCompleted(
+        typeof data?.completed === "string" ? data.completed : ""
+      );
+      setEnergyShift(
+        typeof data?.energy_shift === "string" ? data.energy_shift : ""
+      );
 
       if (data?.structure && Array.isArray(data.structure)) {
-        const initialized = (data.structure as Record<string, unknown>[]).map(
-          (item) => ({
-            name: String(item.movement ?? ""),
-            original: String(item.movement ?? ""),
-            sets: Number(item.sets) || 0,
-            reps: String(item.reps ?? ""),
-            rir: String(item.rir ?? ""),
-            note: String(item.note ?? ""),
-            logs: Array.from(
-              { length: Number(item.sets) || 0 },
-              () =>
-                ({
-                  weight: "",
-                  reps: "",
-                }) satisfies SetLog
-            ),
-            notes: "",
-          })
-        );
+        const structureItems = data.structure as Record<string, unknown>[];
+        const initialized = structureItems.map((item) => ({
+          name: String(item.movement ?? ""),
+          original: String(item.movement ?? ""),
+          sets: Number(item.sets) || 0,
+          reps: String(item.reps ?? ""),
+          rir: String(item.rir ?? ""),
+          note: String(item.note ?? ""),
+          logs: Array.from(
+            { length: Number(item.sets) || 0 },
+            () =>
+              ({
+                weight: "",
+                reps: "",
+              }) satisfies SetLog
+          ),
+          notes: "",
+        }));
 
-        setMovements(initialized);
+        const logs = logsRaw as WorkoutLogRow[];
+        setMovements(
+          logs.length > 0
+            ? mergeSavedLogsIntoMovements(structureItems, initialized, logs)
+            : initialized
+        );
       }
     };
 
