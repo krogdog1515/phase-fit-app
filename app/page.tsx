@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "./lib/supabase";
+import { normalizeDifficulty } from "./lib/difficulty";
 
 type WorkoutRow = {
   id: string;
@@ -10,7 +11,46 @@ type WorkoutRow = {
   phase: string;
   intensity?: string;
   created_at: string;
+  completed?: string | null;
+  difficulty?: string | null;
 };
+
+type TodaySessionKind = "not_started" | "in_progress" | "completed";
+
+function getTodaySessionKind(w: WorkoutRow): TodaySessionKind {
+  const c = (w.completed ?? "").trim().toLowerCase();
+  if (c === "full" || c === "skipped") return "completed";
+  if (c === "partial") return "in_progress";
+  return "not_started";
+}
+
+/** Prior session is the next row after today’s (list is newest-first). */
+function buildAdaptiveInsight(today: WorkoutRow, prior?: WorkoutRow): string {
+  const priorDiff = prior ? normalizeDifficulty(prior.difficulty) : null;
+
+  if (priorDiff === "too_hard") {
+    return "Reduced intensity based on recent fatigue";
+  }
+  if (priorDiff === "too_easy") {
+    return "Progressing strength after strong recent recovery";
+  }
+
+  const phase = (today.phase ?? "").toLowerCase();
+  if (phase === "luteal") {
+    return "Focus on stability and recovery during luteal phase";
+  }
+  if (phase === "menstrual") {
+    return "Prioritizing recovery while staying consistent";
+  }
+  if (phase === "follicular") {
+    return "Building capacity as energy rises";
+  }
+  if (phase === "ovulatory") {
+    return "Leveraging peak readiness for quality work";
+  }
+
+  return "Adapted to your cycle phase, recovery, and recent performance";
+}
 
 function isCreatedToday(isoDate: string): boolean {
   const d = new Date(isoDate);
@@ -45,7 +85,7 @@ export default function Home() {
 
       const { data: workoutsData, error } = await supabase
         .from("workouts")
-        .select("id, workout, phase, intensity, created_at")
+        .select("id, workout, phase, intensity, created_at, completed, difficulty")
         .eq("user_id", data.user.id)
         .order("created_at", { ascending: false });
 
@@ -66,6 +106,20 @@ export default function Home() {
 
   const todaysWorkout =
     workouts.find((w) => isCreatedToday(w.created_at)) ?? null;
+
+  const priorWorkout =
+    todaysWorkout != null
+      ? workouts.find((w) => w.id !== todaysWorkout.id)
+      : undefined;
+
+  const todaySessionKind = todaysWorkout
+    ? getTodaySessionKind(todaysWorkout)
+    : null;
+
+  const insight =
+    todaysWorkout != null
+      ? buildAdaptiveInsight(todaysWorkout, priorWorkout)
+      : null;
 
   if (loading) {
     return (
@@ -93,43 +147,68 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Hero: Today's Plan */}
+        {/* Hero: Today’s recommendation */}
         <section
           className="rounded-2xl border-2 border-[#7a1f2a]/20 bg-white p-6 sm:p-8 shadow-md shadow-[#7a1f2a]/10 ring-1 ring-black/[0.03]"
-          aria-labelledby="todays-plan-heading"
+          aria-labelledby="todays-training-heading"
         >
           <h2
-            id="todays-plan-heading"
+            id="todays-training-heading"
             className="text-xl sm:text-2xl font-bold text-gray-900 text-center"
           >
-            Today’s Plan
+            Today’s Training Recommendation
           </h2>
 
           <p className="mt-2 text-center text-sm text-gray-600 leading-relaxed max-w-sm mx-auto">
-            Your workout adapts based on your cycle and past performance
+            Adapted to your cycle phase, recovery, and recent performance
           </p>
 
           <div className="mt-6 space-y-4">
             {todaysWorkout ? (
               <>
-                <div className="text-center space-y-1">
+                <div className="text-center space-y-2">
                   <p className="text-lg sm:text-xl font-semibold text-gray-900">
                     {todaysWorkout.workout}
                   </p>
+                  {insight ? (
+                    <p className="text-sm text-[#7a1f2a]/90 leading-snug max-w-md mx-auto">
+                      {insight}
+                    </p>
+                  ) : null}
                   <p className="text-sm text-gray-500 capitalize">
                     {todaysWorkout.phase} phase
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    router.push(`/workout/${todaysWorkout.id}`)
-                  }
-                  className="w-full rounded-xl bg-[#7a1f2a] py-4 px-4 text-base font-semibold text-white shadow-lg shadow-[#7a1f2a]/25 hover:bg-[#641a24] active:scale-[0.99] transition"
-                >
-                  Continue Workout
-                </button>
+                {todaySessionKind === "completed" ? (
+                  <div className="space-y-3">
+                    <p className="text-center text-sm text-gray-600 leading-relaxed">
+                      Nice work — you&apos;re set for today. A fresh recommendation
+                      will be ready when you come back tomorrow.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(`/workout/${todaysWorkout.id}`)
+                      }
+                      className="w-full rounded-xl border-2 border-[#7a1f2a]/30 bg-[#f9f7f7] py-3 px-4 text-sm font-semibold text-[#7a1f2a] hover:bg-[#7a1f2a]/5 transition"
+                    >
+                      Review session
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(`/workout/${todaysWorkout.id}`)
+                    }
+                    className="w-full rounded-xl bg-[#7a1f2a] py-4 px-4 text-base font-semibold text-white shadow-lg shadow-[#7a1f2a]/25 hover:bg-[#641a24] active:scale-[0.99] transition"
+                  >
+                    {todaySessionKind === "in_progress"
+                      ? "Continue Session"
+                      : "Start Session"}
+                  </button>
+                )}
               </>
             ) : (
               <>
