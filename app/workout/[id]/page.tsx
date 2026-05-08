@@ -104,15 +104,15 @@ export default function WorkoutPage() {
   }, [workoutId]);
 
   const updateMovementName = (index: number, value: string) => {
-    const updated = [...movements];
-    updated[index].name = value;
-    setMovements(updated);
+    setMovements((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, name: value } : m))
+    );
   };
 
   const updateNotes = (index: number, value: string) => {
-    const updated = [...movements];
-    updated[index].notes = value;
-    setMovements(updated);
+    setMovements((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, notes: value } : m))
+    );
   };
 
   const updateSet = (
@@ -121,9 +121,17 @@ export default function WorkoutPage() {
     field: keyof SetLog,
     value: string
   ) => {
-    const updated = [...movements];
-    updated[movementIndex].logs[setIndex][field] = value;
-    setMovements(updated);
+    setMovements((prev) =>
+      prev.map((m, mi) => {
+        if (mi !== movementIndex) return m;
+        return {
+          ...m,
+          logs: m.logs.map((set, si) =>
+            si !== setIndex ? set : { ...set, [field]: value }
+          ),
+        };
+      })
+    );
   };
 
   function buildLogRows(): Array<{
@@ -158,6 +166,9 @@ export default function WorkoutPage() {
         if (emptyBoth) return;
         if (w === null || r === null) return;
 
+        const repsInt = Math.round(r);
+        if (!Number.isFinite(repsInt)) return;
+
         rows.push({
           workout_id: workout.id,
           movement: m.name,
@@ -165,7 +176,7 @@ export default function WorkoutPage() {
           final_movement: m.name,
           notes: idx === 0 ? (m.notes.trim() || null) : null,
           weight: w,
-          reps: Math.round(r),
+          reps: repsInt,
           set_number: idx + 1,
         });
       });
@@ -198,11 +209,31 @@ export default function WorkoutPage() {
       return;
     }
 
+    for (const row of logsToInsert) {
+      if (
+        !Number.isFinite(row.weight) ||
+        !Number.isFinite(row.reps) ||
+        !Number.isFinite(row.set_number)
+      ) {
+        alert("Invalid weight, reps, or set number. Check your log entries.");
+        return;
+      }
+    }
+
     setSaving(true);
 
-    const { error: logError } = await supabase
-      .from("workout_logs")
-      .insert(logsToInsert);
+    const { error: logError } = await supabase.from("workout_logs").insert(
+      logsToInsert.map((row) => ({
+        workout_id: row.workout_id,
+        movement: row.movement,
+        original_movement: row.original_movement,
+        final_movement: row.final_movement,
+        notes: row.notes,
+        weight: row.weight,
+        reps: row.reps,
+        set_number: row.set_number,
+      }))
+    );
 
     if (logError) {
       console.error(logError);
