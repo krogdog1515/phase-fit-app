@@ -103,7 +103,7 @@ export default function GeneratePage() {
             <select
               value={phase}
               onChange={(e) => setPhase(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded"
+              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
             >
               <option value="">Select Phase</option>
               <option value="menstrual">Menstrual</option>
@@ -119,7 +119,7 @@ export default function GeneratePage() {
             <select
               value={energy}
               onChange={(e) => setEnergy(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded"
+              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
             >
               <option value="">Select Energy</option>
               <option value="low">Low</option>
@@ -134,7 +134,7 @@ export default function GeneratePage() {
             <select
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded"
+              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
             >
               <option value="">Select Duration</option>
               <option value="20">20 min</option>
@@ -149,7 +149,7 @@ export default function GeneratePage() {
             <select
               value={style}
               onChange={(e) => setStyle(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded"
+              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
             >
               <option value="">Select Type</option>
               <option value="strength">Strength</option>
@@ -169,7 +169,7 @@ export default function GeneratePage() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Injuries, preferences, etc."
-              className="w-full mt-1 p-3 border border-gray-300 rounded"
+              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
             />
           </div>
 

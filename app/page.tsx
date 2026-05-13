@@ -15,13 +15,9 @@ type WorkoutRow = {
   difficulty?: string | null;
 };
 
-type TodaySessionKind = "not_started" | "in_progress" | "completed";
-
-function getTodaySessionKind(w: WorkoutRow): TodaySessionKind {
+function isSessionComplete(w: WorkoutRow): boolean {
   const c = (w.completed ?? "").trim().toLowerCase();
-  if (c === "full" || c === "skipped") return "completed";
-  if (c === "partial") return "in_progress";
-  return "not_started";
+  return c === "full" || c === "skipped";
 }
 
 /** Prior session is the next row after today’s (list is newest-first). */
@@ -104,21 +100,28 @@ export default function Home() {
       ? workouts
       : workouts.filter((w) => w.phase === phaseFilter);
 
-  const todaysWorkout =
-    workouts.find((w) => isCreatedToday(w.created_at)) ?? null;
+  const todaysWorkouts = workouts.filter((w) => isCreatedToday(w.created_at));
+
+  const activeIncompleteToday =
+    todaysWorkouts.find((w) => !isSessionComplete(w)) ?? null;
+
+  /** Newest session today when resuming; newest completed today when all are done. */
+  const heroWorkout =
+    activeIncompleteToday ?? (todaysWorkouts[0] ?? null);
+
+  const heroShowsCompletedOnly =
+    heroWorkout != null &&
+    activeIncompleteToday == null &&
+    todaysWorkouts.length > 0;
 
   const priorWorkout =
-    todaysWorkout != null
-      ? workouts.find((w) => w.id !== todaysWorkout.id)
+    heroWorkout != null
+      ? workouts.find((w) => w.id !== heroWorkout.id)
       : undefined;
 
-  const todaySessionKind = todaysWorkout
-    ? getTodaySessionKind(todaysWorkout)
-    : null;
-
   const insight =
-    todaysWorkout != null
-      ? buildAdaptiveInsight(todaysWorkout, priorWorkout)
+    heroWorkout != null
+      ? buildAdaptiveInsight(heroWorkout, priorWorkout)
       : null;
 
   if (loading) {
@@ -164,11 +167,11 @@ export default function Home() {
           </p>
 
           <div className="mt-6 space-y-4">
-            {todaysWorkout ? (
+            {heroWorkout ? (
               <>
                 <div className="text-center space-y-2">
                   <p className="text-lg sm:text-xl font-semibold text-gray-900">
-                    {todaysWorkout.workout}
+                    {heroWorkout.workout}
                   </p>
                   {insight ? (
                     <p className="text-sm text-[#7a1f2a]/90 leading-snug max-w-md mx-auto">
@@ -176,37 +179,42 @@ export default function Home() {
                     </p>
                   ) : null}
                   <p className="text-sm text-gray-500 capitalize">
-                    {todaysWorkout.phase} phase
+                    {heroWorkout.phase} phase
                   </p>
                 </div>
 
-                {todaySessionKind === "completed" ? (
+                {heroShowsCompletedOnly ? (
                   <div className="space-y-3">
                     <p className="text-center text-sm text-gray-600 leading-relaxed">
-                      Nice work — you&apos;re set for today. A fresh recommendation
-                      will be ready when you come back tomorrow.
+                      Your latest session is complete. Review it anytime, or add
+                      another round when you&apos;re ready.
                     </p>
                     <button
                       type="button"
                       onClick={() =>
-                        router.push(`/workout/${todaysWorkout.id}`)
+                        router.push(`/workout/${heroWorkout.id}`)
                       }
+                      className="w-full rounded-xl bg-[#7a1f2a] py-4 px-4 text-base font-semibold text-white shadow-lg shadow-[#7a1f2a]/25 hover:bg-[#641a24] active:scale-[0.99] transition"
+                    >
+                      Review Session
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/generate")}
                       className="w-full rounded-xl border-2 border-[#7a1f2a]/30 bg-[#f9f7f7] py-3 px-4 text-sm font-semibold text-[#7a1f2a] hover:bg-[#7a1f2a]/5 transition"
                     >
-                      Review session
+                      Generate Another Session
                     </button>
                   </div>
                 ) : (
                   <button
                     type="button"
                     onClick={() =>
-                      router.push(`/workout/${todaysWorkout.id}`)
+                      router.push(`/workout/${heroWorkout.id}`)
                     }
                     className="w-full rounded-xl bg-[#7a1f2a] py-4 px-4 text-base font-semibold text-white shadow-lg shadow-[#7a1f2a]/25 hover:bg-[#641a24] active:scale-[0.99] transition"
                   >
-                    {todaySessionKind === "in_progress"
-                      ? "Continue Session"
-                      : "Start Session"}
+                    Continue Session
                   </button>
                 )}
               </>
@@ -236,7 +244,7 @@ export default function Home() {
           <select
             value={phaseFilter}
             onChange={(e) => setPhaseFilter(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white"
+            className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white text-gray-900 [color-scheme:light]"
           >
             <option value="all">All Phases</option>
             <option value="menstrual">Menstrual</option>

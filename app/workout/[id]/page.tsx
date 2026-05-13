@@ -433,7 +433,7 @@ export default function WorkoutPage() {
               <input
                 value={item.name}
                 onChange={(e) => updateMovementName(i, e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded font-semibold"
+                className="w-full p-2 border border-gray-300 rounded font-semibold bg-white text-gray-900 placeholder:text-gray-600"
               />
 
               <p className="text-sm text-gray-500">
@@ -458,7 +458,7 @@ export default function WorkoutPage() {
                       onChange={(e) =>
                         updateSet(i, idx, "weight", e.target.value)
                       }
-                      className="w-full p-2 border border-gray-300 rounded"
+                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
                     />
                     <input
                       type="text"
@@ -468,7 +468,7 @@ export default function WorkoutPage() {
                       onChange={(e) =>
                         updateSet(i, idx, "reps", e.target.value)
                       }
-                      className="w-full p-2 border border-gray-300 rounded"
+                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
                     />
                   </div>
                 ))}
@@ -478,7 +478,7 @@ export default function WorkoutPage() {
                 placeholder="Notes (optional)"
                 value={item.notes}
                 onChange={(e) => updateNotes(i, e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded"
+                className="w-full p-2 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
               />
             </div>
           ))}
@@ -510,7 +510,7 @@ export default function WorkoutPage() {
                 <select
                   value={completed}
                   onChange={(e) => setCompleted(e.target.value)}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded"
+                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
                 >
                   <option value="">Select</option>
                   <option value="full">Full workout</option>
@@ -524,7 +524,7 @@ export default function WorkoutPage() {
                 <select
                   value={difficulty}
                   onChange={(e) => setDifficulty(e.target.value)}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded"
+                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
                 >
                   <option value="">Select</option>
                   {DIFFICULTY_VALUES.map((v) => (
@@ -540,7 +540,7 @@ export default function WorkoutPage() {
                 <select
                   value={energyShift}
                   onChange={(e) => setEnergyShift(e.target.value)}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded"
+                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
                 >
                   <option value="">Select</option>
                   <option value="better">Better</option>
