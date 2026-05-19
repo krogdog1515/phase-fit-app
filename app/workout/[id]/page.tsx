@@ -26,6 +26,12 @@ type MovementState = {
   notes: string;
 };
 
+type FlowBlock = {
+  block: string;
+  duration: string;
+  instructions: string;
+};
+
 type WorkoutRow = {
   id: string;
   cycle_guidance?: {
@@ -34,6 +40,8 @@ type WorkoutRow = {
     adjustments?: string;
   };
   structure?: unknown;
+  flow?: unknown;
+  intensity?: string;
   completed?: string | null;
   energy_shift?: string | null;
 };
@@ -146,6 +154,7 @@ export default function WorkoutPage() {
 
   const [workout, setWorkout] = useState<WorkoutRow | null>(null);
   const [movements, setMovements] = useState<MovementState[]>([]);
+  const [flowBlocks, setFlowBlocks] = useState<FlowBlock[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
 
   const [completed, setCompleted] = useState("");
@@ -181,32 +190,45 @@ export default function WorkoutPage() {
         typeof data?.energy_shift === "string" ? data.energy_shift : ""
       );
 
+      const flowItems = Array.isArray(data?.flow)
+        ? (data.flow as Record<string, unknown>[]).map((f) => ({
+            block: String(f.block ?? ""),
+            duration: String(f.duration ?? ""),
+            instructions: String(f.instructions ?? ""),
+          }))
+        : [];
+      setFlowBlocks(flowItems);
+
       if (data?.structure && Array.isArray(data.structure)) {
         const structureItems = data.structure as Record<string, unknown>[];
-        const initialized = structureItems.map((item) => ({
-          name: String(item.movement ?? ""),
-          original: String(item.movement ?? ""),
-          sets: Number(item.sets) || 0,
-          reps: String(item.reps ?? ""),
-          rir: String(item.rir ?? ""),
-          note: String(item.note ?? ""),
-          logs: Array.from(
-            { length: Number(item.sets) || 0 },
-            () =>
-              ({
-                weight: "",
-                reps: "",
-              }) satisfies SetLog
-          ),
-          notes: "",
-        }));
+        if (structureItems.length > 0) {
+          const initialized = structureItems.map((item) => ({
+            name: String(item.movement ?? ""),
+            original: String(item.movement ?? ""),
+            sets: Number(item.sets) || 0,
+            reps: String(item.reps ?? ""),
+            rir: String(item.rir ?? ""),
+            note: String(item.note ?? ""),
+            logs: Array.from(
+              { length: Number(item.sets) || 0 },
+              () =>
+                ({
+                  weight: "",
+                  reps: "",
+                }) satisfies SetLog
+            ),
+            notes: "",
+          }));
 
-        const logs = logsRaw as WorkoutLogRow[];
-        setMovements(
-          logs.length > 0
-            ? mergeSavedLogsIntoMovements(structureItems, initialized, logs)
-            : initialized
-        );
+          const logs = logsRaw as WorkoutLogRow[];
+          setMovements(
+            logs.length > 0
+              ? mergeSavedLogsIntoMovements(structureItems, initialized, logs)
+              : initialized
+          );
+        } else {
+          setMovements([]);
+        }
       }
     };
 
@@ -311,8 +333,11 @@ export default function WorkoutPage() {
       }
     }
 
+    const isFlowSession =
+      flowBlocks.length > 0 && movements.length === 0;
+
     const logsToInsert = buildLogRows();
-    if (logsToInsert.length === 0) {
+    if (logsToInsert.length === 0 && !isFlowSession) {
       alert(
         "Log at least one set with weight and reps so future workouts can progress."
       );
@@ -332,24 +357,26 @@ export default function WorkoutPage() {
 
     setSaving(true);
 
-    const { error: logError } = await supabase.from("workout_logs").insert(
-      logsToInsert.map((row) => ({
-        workout_id: row.workout_id,
-        movement: row.movement,
-        original_movement: row.original_movement,
-        final_movement: row.final_movement,
-        notes: row.notes,
-        weight: row.weight,
-        reps: row.reps,
-        set_number: row.set_number,
-      }))
-    );
+    if (logsToInsert.length > 0) {
+      const { error: logError } = await supabase.from("workout_logs").insert(
+        logsToInsert.map((row) => ({
+          workout_id: row.workout_id,
+          movement: row.movement,
+          original_movement: row.original_movement,
+          final_movement: row.final_movement,
+          notes: row.notes,
+          weight: row.weight,
+          reps: row.reps,
+          set_number: row.set_number,
+        }))
+      );
 
-    if (logError) {
-      console.error(logError);
-      alert(logError.message || "Could not save workout logs.");
-      setSaving(false);
-      return;
+      if (logError) {
+        console.error(logError);
+        alert(logError.message || "Could not save workout logs.");
+        setSaving(false);
+        return;
+      }
     }
 
     const { error: workoutError } = await supabase
@@ -424,6 +451,30 @@ export default function WorkoutPage() {
 
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-gray-900">Your Plan</h2>
+
+          {flowBlocks.length > 0 && movements.length === 0 ? (
+            <div className="space-y-3">
+              {workout.intensity ? (
+                <p className="text-sm text-gray-600">
+                  Intensity: {workout.intensity}
+                </p>
+              ) : null}
+              {flowBlocks.map((block, i) => (
+                <div
+                  key={i}
+                  className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-2"
+                >
+                  <p className="font-semibold text-gray-900">{block.block}</p>
+                  {block.duration ? (
+                    <p className="text-sm text-[#7a1f2a]">{block.duration}</p>
+                  ) : null}
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                    {block.instructions}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {movements.map((item, i) => (
             <div
@@ -500,9 +551,9 @@ export default function WorkoutPage() {
               </h2>
 
               <p className="text-sm text-gray-600">
-                Your logged sets (weight × reps) are saved for progressive
-                overload. Add quick feedback below—coaching uses this on the
-                next generation.
+                {flowBlocks.length > 0 && movements.length === 0
+                  ? "Share how the session felt—your feedback shapes future coaching."
+                  : "Your logged sets (weight × reps) are saved for progressive overload. Add quick feedback below—coaching uses this on the next generation."}
               </p>
 
               <div>

@@ -4,6 +4,14 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import { normalizeDifficulty } from "../../lib/difficulty";
+import {
+  analyzeUserNotes,
+  buildSystemPrompt,
+  buildUserMessage,
+  extractMovementsList,
+  getWorkoutModality,
+  parseWorkoutJson,
+} from "../../lib/workout-prompts";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -53,7 +61,6 @@ function sortPatterns(patterns: Iterable<string>): string[] {
   });
 }
 
-/** Highest weight wins; tie-break higher reps. */
 function pickTopSet(rows: Record<string, any>[]): Record<string, any> | null {
   const valid = rows.filter((r) =>
     isValidSetLog(r as Record<string, unknown>)
@@ -70,11 +77,6 @@ function pickTopSet(rows: Record<string, any>[]): Record<string, any> | null {
   });
 }
 
-/**
- * Up to 3 phase-matched workouts (caller orders newest-first).
- * Per movement pattern: top set each session (oldest→newest). Difficulty from
- * the workout row is appended only on the last line for that pattern.
- */
 function buildPerformanceSummary(
   pastWorkouts: Record<string, any>[],
   logs: Record<string, any>[]
@@ -151,112 +153,59 @@ export async function POST(req: Request) {
       );
     }
 
-    // 🔥 GET RECENT WORKOUTS
-    const { data: pastWorkouts } = await supabase
-      .from("workouts")
-      .select("*")
-      .eq("user_id", user_id)
-      .eq("phase", phase)
-      .order("created_at", { ascending: false })
-      .limit(3);
+    const modality = getWorkoutModality(String(style));
+    const notesAnalysis = analyzeUserNotes(notes ?? "");
 
     let performanceSummary = "";
 
-    if (pastWorkouts && pastWorkouts.length > 0) {
-      const workoutIds = pastWorkouts.map((w) => w.id);
-
-      const { data: logs } = await supabase
-        .from("workout_logs")
+    if (modality === "strength") {
+      const { data: pastWorkouts } = await supabase
+        .from("workouts")
         .select("*")
-        .in("workout_id", workoutIds);
+        .eq("user_id", user_id)
+        .eq("phase", phase)
+        .order("created_at", { ascending: false })
+        .limit(3);
 
-      if (logs && logs.length > 0) {
-        performanceSummary = buildPerformanceSummary(pastWorkouts, logs);
+      if (pastWorkouts && pastWorkouts.length > 0) {
+        const workoutIds = pastWorkouts.map((w) => w.id);
+
+        const { data: logs } = await supabase
+          .from("workout_logs")
+          .select("*")
+          .in("workout_id", workoutIds);
+
+        if (logs && logs.length > 0) {
+          performanceSummary = buildPerformanceSummary(pastWorkouts, logs);
+        }
       }
     }
 
-    // 🔥 OPENAI
+    const systemPrompt = buildSystemPrompt(modality, notesAnalysis);
+    const userMessage = buildUserMessage({
+      phase,
+      energy,
+      time,
+      style,
+      notes: notes ?? "",
+      performanceSummary,
+      modality,
+      notesAnalysis,
+    });
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: `
-You are an elite women's fitness coach specializing in menstrual cycle-based training.
-
-You are responsible for intelligent PROGRESSIVE OVERLOAD.
-
-Use past performance data to adjust the workout.
-
-Each movement may list up to 3 top sets (oldest session first). The last line may end with difficulty in parentheses using ONLY these exact tokens: too_easy | just_right | too_hard. Match token to that session's perceived effort—use it together with load/reps. Read the full trend (stalling, progressing, back‑off); do not ignore earlier sessions.
-
-Difficulty tokens (last line of each movement trend):
-- too_easy → increase load (add weight and/or reps, or progress variation) unless contraindicated by trend or notes.
-- too_hard → reduce intensity (lighter loads, fewer grinding sets, higher RIR, shorter hard work).
-- just_right → maintain structure or small progression (e.g. +2.5–5 lb or +1 rep on a working set).
-
-Also factor energy and cycle phase. If difficulty is missing from a line, infer only from load/reps trend.
-
-When referencing past performance:
-- ALWAYS include previous weight and reps if available
-- ALWAYS convert that into a specific recommendation
-- DO NOT give vague suggestions
-
-Examples:
-- "Increase from 135 lbs to 145 lbs"
-- "Stay at 185 lbs"
-- "Drop to 125 lbs due to fatigue"
-
-Do NOT use percentages unless no data exists.
-
-Every movement MUST include a progression note.
-
-Return ONLY valid JSON:
-
-{
-  "focus": "...",
-  "intensity": "RPE X-X",
-  "cycle_guidance": {
-    "summary": "...",
-    "during_workout": "...",
-    "adjustments": "..."
-  },
-  "structure": [
-    {
-      "movement": "...",
-      "sets": number,
-      "reps": "...",
-      "rir": "...",
-      "note": "Specific progression guidance"
-    }
-  ],
-  "cardio": "...",
-  "recovery": "...",
-  "why": "..."
-}
-          `,
-        },
-        {
-          role: "user",
-          content: `
-Phase: ${phase}
-Energy: ${energy}
-Time: ${time}
-Style: ${style}
-Notes: ${notes}
-
-Recent top-set trend (same phase, oldest→newest):
-${performanceSummary || "No prior data"}
-          `,
-        },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
       ],
     });
 
     const text = completion.choices[0].message.content || "";
 
-    let parsed;
+    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(text);
+      parsed = parseWorkoutJson(text);
     } catch {
       return NextResponse.json(
         { error: "Invalid AI JSON" },
@@ -264,29 +213,32 @@ ${performanceSummary || "No prior data"}
       );
     }
 
-    const structure = parsed.structure || [];
-    const movements = structure.map((m: any) => m.movement);
+    const structure = Array.isArray(parsed.structure) ? parsed.structure : [];
+    const flow = Array.isArray(parsed.flow) ? parsed.flow : [];
+    const movements = extractMovementsList(parsed);
+
+    const insertPayload: Record<string, unknown> = {
+      user_id,
+      phase,
+      workout: parsed.focus,
+      intensity: parsed.intensity,
+      movements,
+      structure,
+      flow,
+      cycle_guidance: parsed.cycle_guidance,
+      cardio: parsed.cardio,
+      recovery: parsed.recovery,
+      why: parsed.why,
+    };
 
     const { data, error } = await supabase
       .from("workouts")
-      .insert([
-        {
-          user_id,
-          phase,
-          workout: parsed.focus,
-          intensity: parsed.intensity,
-          movements,
-          structure,
-          cycle_guidance: parsed.cycle_guidance,
-          cardio: parsed.cardio,
-          recovery: parsed.recovery,
-          why: parsed.why,
-        },
-      ])
+      .insert([insertPayload])
       .select()
       .single();
 
     if (error) {
+      console.error(error);
       return NextResponse.json(
         { error: "Database insert failed" },
         { status: 500 }
@@ -294,8 +246,8 @@ ${performanceSummary || "No prior data"}
     }
 
     return NextResponse.json({ id: data.id });
-
-  } catch {
+  } catch (err) {
+    console.error(err);
     return NextResponse.json(
       { error: "Server error" },
       { status: 500 }
