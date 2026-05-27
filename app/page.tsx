@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import WorkoutCalendar from "./components/WorkoutCalendar";
 import supabase from "./lib/supabase";
 import { normalizeDifficulty } from "./lib/difficulty";
 
@@ -76,7 +77,9 @@ export default function Home() {
   const router = useRouter();
 
   const [workouts, setWorkouts] = useState<WorkoutRow[]>([]);
-  const [phaseFilter, setPhaseFilter] = useState("all");
+  const [outsideActivityDates, setOutsideActivityDates] = useState<string[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -137,6 +140,10 @@ export default function Home() {
 
     resetOutsideForm();
     setShowOutsideModal(false);
+    setOutsideActivityDates((prev) => [
+      new Date().toISOString(),
+      ...prev,
+    ]);
   };
 
   useEffect(() => {
@@ -150,14 +157,29 @@ export default function Home() {
 
       setUserId(data.user.id);
 
-      const { data: workoutsData, error } = await supabase
-        .from("workouts")
-        .select("id, workout, phase, intensity, created_at, completed, difficulty")
-        .eq("user_id", data.user.id)
-        .order("created_at", { ascending: false });
+      const [workoutsRes, outsideRes] = await Promise.all([
+        supabase
+          .from("workouts")
+          .select(
+            "id, workout, phase, intensity, created_at, completed, difficulty"
+          )
+          .eq("user_id", data.user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("outside_workouts")
+          .select("created_at")
+          .eq("user_id", data.user.id)
+          .order("created_at", { ascending: false }),
+      ]);
 
-      if (!error && workoutsData) {
-        setWorkouts(workoutsData as WorkoutRow[]);
+      if (!workoutsRes.error && workoutsRes.data) {
+        setWorkouts(workoutsRes.data as WorkoutRow[]);
+      }
+
+      if (!outsideRes.error && outsideRes.data) {
+        setOutsideActivityDates(
+          outsideRes.data.map((row) => String(row.created_at))
+        );
       }
 
       setLoading(false);
@@ -165,11 +187,6 @@ export default function Home() {
 
     init();
   }, [router]);
-
-  const filteredWorkouts =
-    phaseFilter === "all"
-      ? workouts
-      : workouts.filter((w) => w.phase === phaseFilter);
 
   const todaysWorkouts = workouts.filter((w) => isCreatedToday(w.created_at));
 
@@ -409,44 +426,10 @@ export default function Home() {
           </div>
         )}
 
-        <div className="flex justify-between items-center pt-2">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Workout History
-          </h2>
-
-          <select
-            value={phaseFilter}
-            onChange={(e) => setPhaseFilter(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-gray-300 text-sm bg-white text-gray-900 [color-scheme:light]"
-          >
-            <option value="all">All Phases</option>
-            <option value="menstrual">Menstrual</option>
-            <option value="follicular">Follicular</option>
-            <option value="ovulatory">Ovulatory</option>
-            <option value="luteal">Luteal</option>
-          </select>
-        </div>
-
-        <div className="space-y-3">
-          {filteredWorkouts.length === 0 ? (
-            <p className="text-gray-500 text-sm">No workouts found.</p>
-          ) : (
-            filteredWorkouts.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => router.push(`/workout/${w.id}`)}
-                className="w-full text-left bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:border-[#7a1f2a]/40 hover:shadow transition"
-              >
-                <p className="font-semibold text-gray-900">{w.workout}</p>
-                <p className="text-sm text-gray-500 capitalize">
-                  {w.phase}
-                  {w.intensity ? ` • ${w.intensity}` : ""}
-                </p>
-              </button>
-            ))
-          )}
-        </div>
+        <WorkoutCalendar
+          workouts={workouts}
+          outsideActivityDates={outsideActivityDates}
+        />
 
       </div>
     </main>
