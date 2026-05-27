@@ -117,6 +117,17 @@ If notes indicate recovery, injury, medical context, emotional recovery, or fati
 - use an emotionally intelligent, supportive coaching tone
 `;
 
+export const OUTSIDE_ACTIVITY_RULES = `
+OUTSIDE ACTIVITY (recent external training — recovery/load context ONLY):
+Use recent outside_workouts to understand total training stress. Do NOT treat these as in-app sessions for sets/reps progression.
+
+Rules:
+- Repeated hard cardio or high-stress classes → reduce lower-body grinding intensity; emphasize recovery
+- Light yoga, Pilates, walking, mobility-style activities → recovery-supportive; normal progression may be appropriate if phase allows
+- Multiple hard sessions in a row → increase recovery emphasis in coaching tone and session design
+- Outside activity informs load management; it does NOT replace cycle phase logic
+`;
+
 export const REFLECTION_COACHING_RULES = `
 POST-WORKOUT REFLECTION MEMORY (recent user_notes from completed sessions):
 Use these reflections as adaptive coaching context alongside load/reps trends.
@@ -163,6 +174,33 @@ export function buildReflectionSummary(
   });
 
   return `Recent post-workout reflections (newest first):\n${lines.join("\n")}`;
+}
+
+export type OutsideWorkoutRow = {
+  activity_type?: string | null;
+  duration_minutes?: number | null;
+  intensity?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+};
+
+export function buildOutsideActivitySummary(
+  activities: OutsideWorkoutRow[]
+): string {
+  const entries = activities.slice(0, 5);
+  if (entries.length === 0) return "";
+
+  const lines = entries.map((a) => {
+    const type = (a.activity_type ?? "Activity").trim();
+    const mins = Number(a.duration_minutes) || 0;
+    const intensity = (a.intensity ?? "").trim() || "moderate";
+    const note = (a.notes ?? "").trim();
+    let line = `- ${type} (${mins} min, ${intensity})`;
+    if (note) line += ` — ${note.replace(/\s+/g, " ")}`;
+    return line;
+  });
+
+  return `Recent outside activity:\n${lines.join("\n")}`;
 }
 
 const STRENGTH_JSON_SCHEMA = `{
@@ -240,6 +278,7 @@ You design STRENGTH sessions with intelligent progressive overload.
 
 ${NOTES_PRIORITY_BLOCK}
 ${REFLECTION_COACHING_RULES}
+${OUTSIDE_ACTIVITY_RULES}
 ${notesBlock}
 
 Use past performance data when provided. Each movement trend lists up to 3 top sets (oldest first). Last line may end with difficulty: too_easy | just_right | too_hard.
@@ -266,6 +305,7 @@ You design COACHED CARDIO / HIIT sessions — athletic, intentional, and time-ba
 
 ${NOTES_PRIORITY_BLOCK}
 ${REFLECTION_COACHING_RULES}
+${OUTSIDE_ACTIVITY_RULES}
 ${notesBlock}
 
 REQUIREMENTS:
@@ -296,6 +336,7 @@ You design MOBILITY / RECOVERY flows — restorative, guided, calming, intention
 
 ${NOTES_PRIORITY_BLOCK}
 ${REFLECTION_COACHING_RULES}
+${OUTSIDE_ACTIVITY_RULES}
 ${notesBlock}
 
 REQUIREMENTS:
@@ -343,6 +384,7 @@ export function buildUserMessage(params: {
   notes: string;
   performanceSummary: string;
   reflectionSummary: string;
+  outsideActivitySummary: string;
   modality: WorkoutModality;
   notesAnalysis: NotesAnalysis;
 }): string {
@@ -354,6 +396,7 @@ export function buildUserMessage(params: {
     notes,
     performanceSummary,
     reflectionSummary,
+    outsideActivitySummary,
     modality,
     notesAnalysis,
   } = params;
@@ -369,6 +412,10 @@ export function buildUserMessage(params: {
     ? `\n${reflectionSummary}`
     : "\nRecent post-workout reflections: None yet";
 
+  const outsideSection = outsideActivitySummary
+    ? `\n${outsideActivitySummary}`
+    : "\nRecent outside activity: None logged";
+
   const notesReminder = notesAnalysis.hasNotes
     ? "\nRemember: pre-workout notes are CRITICAL where they conflict with defaults."
     : "";
@@ -381,6 +428,7 @@ Style: ${style}
 Pre-workout notes: ${notes.trim() || "(none)"}
 ${perfSection}
 ${reflectionSection}
+${outsideSection}
 ${notesReminder}
 `.trim();
 }

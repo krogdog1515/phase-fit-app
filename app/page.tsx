@@ -48,6 +48,20 @@ function buildAdaptiveInsight(today: WorkoutRow, prior?: WorkoutRow): string {
   return "Adapted to your cycle phase, recovery, and recent performance";
 }
 
+const OUTSIDE_ACTIVITY_PRESETS = [
+  "Pilates",
+  "Yoga",
+  "Run",
+  "Spin Class",
+  "Hiking",
+  "Strength Class",
+  "Walking",
+  "Cycling",
+  "Swimming",
+];
+
+const OUTSIDE_INTENSITY_OPTIONS = ["light", "moderate", "hard"] as const;
+
 function isCreatedToday(isoDate: string): boolean {
   const d = new Date(isoDate);
   const now = new Date();
@@ -64,10 +78,65 @@ export default function Home() {
   const [workouts, setWorkouts] = useState<WorkoutRow[]>([]);
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const [showOutsideModal, setShowOutsideModal] = useState(false);
+  const [outsideActivity, setOutsideActivity] = useState("");
+  const [outsideDuration, setOutsideDuration] = useState("");
+  const [outsideIntensity, setOutsideIntensity] = useState("");
+  const [outsideNotes, setOutsideNotes] = useState("");
+  const [savingOutside, setSavingOutside] = useState(false);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
+  };
+
+  const resetOutsideForm = () => {
+    setOutsideActivity("");
+    setOutsideDuration("");
+    setOutsideIntensity("");
+    setOutsideNotes("");
+  };
+
+  const saveOutsideWorkout = async () => {
+    if (!userId) return;
+
+    const activity = outsideActivity.trim();
+    const duration = Number(outsideDuration);
+    if (!activity) {
+      alert("Choose or enter an activity.");
+      return;
+    }
+    if (!Number.isFinite(duration) || duration <= 0) {
+      alert("Enter duration in minutes.");
+      return;
+    }
+    if (!OUTSIDE_INTENSITY_OPTIONS.includes(outsideIntensity as typeof OUTSIDE_INTENSITY_OPTIONS[number])) {
+      alert("Select intensity.");
+      return;
+    }
+
+    setSavingOutside(true);
+
+    const { error } = await supabase.from("outside_workouts").insert({
+      user_id: userId,
+      activity_type: activity,
+      duration_minutes: Math.round(duration),
+      intensity: outsideIntensity,
+      notes: outsideNotes.trim() || null,
+    });
+
+    setSavingOutside(false);
+
+    if (error) {
+      console.error(error);
+      alert(error.message || "Could not save activity.");
+      return;
+    }
+
+    resetOutsideForm();
+    setShowOutsideModal(false);
   };
 
   useEffect(() => {
@@ -78,6 +147,8 @@ export default function Home() {
         router.push("/login");
         return;
       }
+
+      setUserId(data.user.id);
 
       const { data: workoutsData, error } = await supabase
         .from("workouts")
@@ -235,6 +306,108 @@ export default function Home() {
             )}
           </div>
         </section>
+
+        <div className="flex justify-center -mt-4">
+          <button
+            type="button"
+            onClick={() => setShowOutsideModal(true)}
+            className="text-sm text-gray-600 hover:text-[#7a1f2a] font-medium py-2 px-3 rounded-lg hover:bg-white/80 transition"
+          >
+            + Log Outside Workout
+          </button>
+        </div>
+
+        {showOutsideModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Log outside activity
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOutsideModal(false);
+                    resetOutsideForm();
+                  }}
+                  className="text-sm text-gray-500 hover:text-gray-800"
+                >
+                  Close
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-600">
+                Quick log for activities done outside the app — helps coaching
+                understand your overall load.
+              </p>
+
+              <div>
+                <label className="text-sm text-gray-500">Activity</label>
+                <input
+                  list="outside-activity-presets"
+                  value={outsideActivity}
+                  onChange={(e) => setOutsideActivity(e.target.value)}
+                  placeholder="e.g. Pilates, Run, Yoga"
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-600"
+                />
+                <datalist id="outside-activity-presets">
+                  {OUTSIDE_ACTIVITY_PRESETS.map((a) => (
+                    <option key={a} value={a} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500">Duration (minutes)</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={outsideDuration}
+                  onChange={(e) => setOutsideDuration(e.target.value)}
+                  placeholder="45"
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-600"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500">Intensity</label>
+                <select
+                  value={outsideIntensity}
+                  onChange={(e) => setOutsideIntensity(e.target.value)}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 [color-scheme:light]"
+                >
+                  <option value="">Select</option>
+                  {OUTSIDE_INTENSITY_OPTIONS.map((level) => (
+                    <option key={level} value={level}>
+                      {level.charAt(0).toUpperCase() + level.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500">Notes (optional)</label>
+                <textarea
+                  value={outsideNotes}
+                  onChange={(e) => setOutsideNotes(e.target.value)}
+                  placeholder="How it felt, anything relevant"
+                  rows={2}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-600"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={saveOutsideWorkout}
+                disabled={savingOutside}
+                className="w-full py-3 rounded-lg font-semibold bg-[#7a1f2a] text-white disabled:opacity-60"
+              >
+                {savingOutside ? "Saving…" : "Save activity"}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex justify-between items-center pt-2">
           <h2 className="text-lg font-semibold text-gray-900">

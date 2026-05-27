@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { normalizeDifficulty } from "../../lib/difficulty";
 import {
   analyzeUserNotes,
+  buildOutsideActivitySummary,
   buildReflectionSummary,
   buildSystemPrompt,
   buildUserMessage,
@@ -168,6 +169,17 @@ export async function POST(req: Request) {
       recentForReflection ?? []
     );
 
+    const { data: recentOutside } = await supabase
+      .from("outside_workouts")
+      .select("activity_type, duration_minutes, intensity, notes, created_at")
+      .eq("user_id", user_id)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    const outsideActivitySummary = buildOutsideActivitySummary(
+      recentOutside ?? []
+    );
+
     let performanceSummary = "";
 
     if (modality === "strength") {
@@ -202,6 +214,7 @@ export async function POST(req: Request) {
       notes: notes ?? "",
       performanceSummary,
       reflectionSummary,
+      outsideActivitySummary,
       modality,
       notesAnalysis,
     });
