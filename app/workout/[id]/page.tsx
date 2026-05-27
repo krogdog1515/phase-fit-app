@@ -44,6 +44,7 @@ type WorkoutRow = {
   intensity?: string;
   completed?: string | null;
   energy_shift?: string | null;
+  user_notes?: string | null;
 };
 
 type WorkoutLogRow = {
@@ -160,6 +161,7 @@ export default function WorkoutPage() {
   const [completed, setCompleted] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [energyShift, setEnergyShift] = useState("");
+  const [userNotes, setUserNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -188,6 +190,9 @@ export default function WorkoutPage() {
       );
       setEnergyShift(
         typeof data?.energy_shift === "string" ? data.energy_shift : ""
+      );
+      setUserNotes(
+        typeof data?.user_notes === "string" ? data.user_notes : ""
       );
 
       const flowItems = Array.isArray(data?.flow)
@@ -385,6 +390,7 @@ export default function WorkoutPage() {
         completed,
         difficulty: normalizeDifficultyForStorage(difficulty),
         energy_shift: energyShift,
+        user_notes: userNotes.trim() || null,
       })
       .eq("id", workout.id);
 
@@ -598,6 +604,19 @@ export default function WorkoutPage() {
                   <option value="same">Same</option>
                   <option value="worse">Worse</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-500">
+                  How did this workout feel?
+                </label>
+                <textarea
+                  value={userNotes}
+                  onChange={(e) => setUserNotes(e.target.value)}
+                  placeholder="Optional — e.g. Felt strong today, lower back tight during hinges"
+                  rows={3}
+                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
+                />
               </div>
 
               <div className="flex gap-2">

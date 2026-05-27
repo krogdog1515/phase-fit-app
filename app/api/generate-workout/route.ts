@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { normalizeDifficulty } from "../../lib/difficulty";
 import {
   analyzeUserNotes,
+  buildReflectionSummary,
   buildSystemPrompt,
   buildUserMessage,
   extractMovementsList,
@@ -156,6 +157,17 @@ export async function POST(req: Request) {
     const modality = getWorkoutModality(String(style));
     const notesAnalysis = analyzeUserNotes(notes ?? "");
 
+    const { data: recentForReflection } = await supabase
+      .from("workouts")
+      .select("workout, user_notes, created_at, difficulty")
+      .eq("user_id", user_id)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    const reflectionSummary = buildReflectionSummary(
+      recentForReflection ?? []
+    );
+
     let performanceSummary = "";
 
     if (modality === "strength") {
@@ -189,6 +201,7 @@ export async function POST(req: Request) {
       style,
       notes: notes ?? "",
       performanceSummary,
+      reflectionSummary,
       modality,
       notesAnalysis,
     });

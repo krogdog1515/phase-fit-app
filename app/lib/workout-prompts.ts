@@ -117,6 +117,54 @@ If notes indicate recovery, injury, medical context, emotional recovery, or fati
 - use an emotionally intelligent, supportive coaching tone
 `;
 
+export const REFLECTION_COACHING_RULES = `
+POST-WORKOUT REFLECTION MEMORY (recent user_notes from completed sessions):
+Use these reflections as adaptive coaching context alongside load/reps trends.
+They should influence movement selection, progression pacing, recovery emphasis, and coaching tone.
+
+Rules:
+- Repeated fatigue, crashes, or low energy → reduce intensity and prioritize recovery
+- Repeated pain, tightness, or discomfort → avoid aggravating movement patterns; offer swaps
+- Repeated positive responses (felt strong, better, great) → allow thoughtful progression when phase supports it
+- Do NOT fully override menstrual cycle phase logic
+- Do NOT diagnose, treat, or give medical advice—encourage professional care when appropriate
+- Be emotionally aware and supportive in cycle_guidance.summary when reflections matter
+`;
+
+export type ReflectionWorkoutRow = {
+  workout?: string | null;
+  user_notes?: string | null;
+  created_at?: string | null;
+  difficulty?: string | null;
+};
+
+/** Last 3–5 sessions with non-empty user_notes, newest first (input already ordered desc). */
+export function buildReflectionSummary(
+  workouts: ReflectionWorkoutRow[]
+): string {
+  const entries = workouts
+    .filter((w) => (w.user_notes ?? "").trim().length > 0)
+    .slice(0, 5);
+
+  if (entries.length === 0) return "";
+
+  const lines = entries.map((w) => {
+    const title = (w.workout ?? "Session").trim();
+    const note = (w.user_notes ?? "").trim().replace(/\s+/g, " ");
+    const diff = w.difficulty ? ` [${w.difficulty}]` : "";
+    const date = w.created_at
+      ? new Date(w.created_at).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })
+      : "";
+    const prefix = date ? `${date} — ${title}` : title;
+    return `- ${prefix}${diff}: "${note}"`;
+  });
+
+  return `Recent post-workout reflections (newest first):\n${lines.join("\n")}`;
+}
+
 const STRENGTH_JSON_SCHEMA = `{
   "focus": "...",
   "intensity": "RPE X-X",
@@ -191,6 +239,7 @@ You are an elite women's fitness coach specializing in menstrual cycle-based tra
 You design STRENGTH sessions with intelligent progressive overload.
 
 ${NOTES_PRIORITY_BLOCK}
+${REFLECTION_COACHING_RULES}
 ${notesBlock}
 
 Use past performance data when provided. Each movement trend lists up to 3 top sets (oldest first). Last line may end with difficulty: too_easy | just_right | too_hard.
@@ -216,6 +265,7 @@ You are an elite women's fitness coach specializing in menstrual cycle-based tra
 You design COACHED CARDIO / HIIT sessions — athletic, intentional, and time-based. NOT generic "do cardio" advice.
 
 ${NOTES_PRIORITY_BLOCK}
+${REFLECTION_COACHING_RULES}
 ${notesBlock}
 
 REQUIREMENTS:
@@ -245,6 +295,7 @@ You are an elite women's fitness coach specializing in menstrual cycle-based tra
 You design MOBILITY / RECOVERY flows — restorative, guided, calming, intentional.
 
 ${NOTES_PRIORITY_BLOCK}
+${REFLECTION_COACHING_RULES}
 ${notesBlock}
 
 REQUIREMENTS:
@@ -291,6 +342,7 @@ export function buildUserMessage(params: {
   style: string;
   notes: string;
   performanceSummary: string;
+  reflectionSummary: string;
   modality: WorkoutModality;
   notesAnalysis: NotesAnalysis;
 }): string {
@@ -301,6 +353,7 @@ export function buildUserMessage(params: {
     style,
     notes,
     performanceSummary,
+    reflectionSummary,
     modality,
     notesAnalysis,
   } = params;
@@ -312,8 +365,12 @@ export function buildUserMessage(params: {
         ? "\nRecent top-set trend: No prior data"
         : "";
 
+  const reflectionSection = reflectionSummary
+    ? `\n${reflectionSummary}`
+    : "\nRecent post-workout reflections: None yet";
+
   const notesReminder = notesAnalysis.hasNotes
-    ? "\nRemember: user notes are CRITICAL and override defaults where they conflict."
+    ? "\nRemember: pre-workout notes are CRITICAL where they conflict with defaults."
     : "";
 
   return `
@@ -321,8 +378,9 @@ Phase: ${phase}
 Energy: ${energy}
 Time: ${time} minutes requested
 Style: ${style}
-Notes: ${notes.trim() || "(none)"}
+Pre-workout notes: ${notes.trim() || "(none)"}
 ${perfSection}
+${reflectionSection}
 ${notesReminder}
 `.trim();
 }
