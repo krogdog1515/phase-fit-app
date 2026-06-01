@@ -9,6 +9,11 @@ import {
   normalizeDifficulty,
   normalizeDifficultyForStorage,
 } from "../../lib/difficulty";
+import MovementProgressionBlock from "../../components/MovementProgressionBlock";
+import {
+  buildLastSessionMap,
+  shouldShowProgressionBlock,
+} from "../../lib/progression-display";
 
 type SetLog = {
   weight: string;
@@ -34,6 +39,8 @@ type FlowBlock = {
 
 type WorkoutRow = {
   id: string;
+  user_id?: string;
+  phase?: string;
   cycle_guidance?: {
     summary?: string;
     during_workout?: string;
@@ -162,6 +169,9 @@ export default function WorkoutPage() {
   const [difficulty, setDifficulty] = useState("");
   const [energyShift, setEnergyShift] = useState("");
   const [userNotes, setUserNotes] = useState("");
+  const [lastSessionByMovement, setLastSessionByMovement] = useState<
+    Record<string, string>
+  >({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -231,6 +241,39 @@ export default function WorkoutPage() {
               ? mergeSavedLogsIntoMovements(structureItems, initialized, logs)
               : initialized
           );
+
+          const userId = data?.user_id as string | undefined;
+          const phase = data?.phase as string | undefined;
+          if (userId && phase) {
+            const originals = initialized.map((m) => m.original);
+            const { data: pastWorkouts } = await supabase
+              .from("workouts")
+              .select("id, difficulty, created_at")
+              .eq("user_id", userId)
+              .eq("phase", phase)
+              .neq("id", workoutId)
+              .order("created_at", { ascending: false })
+              .limit(3);
+
+            if (pastWorkouts && pastWorkouts.length > 0) {
+              const pastIds = pastWorkouts.map((w) => w.id);
+              const { data: priorLogs } = await supabase
+                .from("workout_logs")
+                .select(
+                  "workout_id, movement, original_movement, weight, reps, set_number"
+                )
+                .in("workout_id", pastIds);
+
+              if (priorLogs && priorLogs.length > 0) {
+                const map = buildLastSessionMap(
+                  originals,
+                  pastWorkouts,
+                  priorLogs
+                );
+                setLastSessionByMovement(Object.fromEntries(map));
+              }
+            }
+          }
         } else {
           setMovements([]);
         }
@@ -482,7 +525,14 @@ export default function WorkoutPage() {
             </div>
           ) : null}
 
-          {movements.map((item, i) => (
+          {movements.map((item, i) => {
+            const lastSession = lastSessionByMovement[item.original];
+            const showProgression = shouldShowProgressionBlock(
+              lastSession,
+              item.note
+            );
+
+            return (
             <div
               key={i}
               className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-3"
@@ -493,12 +543,23 @@ export default function WorkoutPage() {
                 className="w-full p-2 border border-gray-300 rounded font-semibold bg-white text-gray-900 placeholder:text-gray-600"
               />
 
-              <p className="text-sm text-gray-500">
-                {item.sets} sets • {item.reps} • RIR {item.rir}
-              </p>
-
-              {item.note && (
-                <p className="text-sm text-[#7a1f2a]">{item.note}</p>
+              {showProgression ? (
+                <MovementProgressionBlock
+                  sets={item.sets}
+                  reps={item.reps}
+                  rir={item.rir}
+                  lastSession={lastSession}
+                  reasonNote={item.note}
+                />
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500">
+                    {item.sets} sets • {item.reps} • RIR {item.rir}
+                  </p>
+                  {item.note ? (
+                    <p className="text-sm text-[#7a1f2a]">{item.note}</p>
+                  ) : null}
+                </>
               )}
 
               <div className="space-y-2">
@@ -538,7 +599,8 @@ export default function WorkoutPage() {
                 className="w-full p-2 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
               />
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <button
