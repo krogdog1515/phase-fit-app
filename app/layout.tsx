@@ -1,16 +1,25 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Barlow, Barlow_Condensed, DM_Sans } from "next/font/google";
 import PwaRegister from "./components/PwaRegister";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const barlowCondensed = Barlow_Condensed({
+  variable: "--font-barlow-condensed",
   subsets: ["latin"],
+  weight: ["700", "800", "900"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
+  weight: ["400", "500"],
+});
+
+const barlowAccent = Barlow({
+  variable: "--font-barlow-accent",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  style: ["italic"],
 });
 
 export const metadata: Metadata = {
@@ -36,7 +45,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#7a1f2a",
+  themeColor: "#F2736A",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -51,9 +60,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${barlowCondensed.variable} ${dmSans.variable} ${barlowAccent.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col bg-pf-bg text-pf-text">
         <PwaRegister />
         {children}
       </body>

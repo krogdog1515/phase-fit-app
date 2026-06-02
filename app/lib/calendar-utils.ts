@@ -9,23 +9,23 @@ export const PHASE_STYLES: Record<
   { cell: string; dot: string; label: string }
 > = {
   menstrual: {
-    cell: "bg-red-50",
-    dot: "bg-red-400",
+    cell: "bg-[#FDEBEA]",
+    dot: "bg-[#E86B63]",
     label: "Menstrual",
   },
   follicular: {
-    cell: "bg-blue-50",
-    dot: "bg-blue-400",
+    cell: "bg-[#EAF2FA]",
+    dot: "bg-[#6B9FD4]",
     label: "Follicular",
   },
   ovulatory: {
-    cell: "bg-green-50",
-    dot: "bg-green-500",
+    cell: "bg-[#E8F5EC]",
+    dot: "bg-[#5BAF7A]",
     label: "Ovulatory",
   },
   luteal: {
-    cell: "bg-yellow-50",
-    dot: "bg-amber-400",
+    cell: "bg-[#FBF3E6]",
+    dot: "bg-[#D4A85A]",
     label: "Luteal",
   },
 };

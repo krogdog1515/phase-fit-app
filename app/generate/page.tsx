@@ -18,7 +18,6 @@ export default function GeneratePage() {
   const [style, setStyle] = useState("");
   const [notes, setNotes] = useState("");
 
-  // 🔐 Auth
   useEffect(() => {
     const getUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -33,7 +32,6 @@ export default function GeneratePage() {
     getUser();
   }, [router]);
 
-  // 🚀 Generate
   const generateWorkout = async () => {
     if (!user) return;
 
@@ -77,33 +75,29 @@ export default function GeneratePage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f9f7f7] p-6">
-      <div className="max-w-xl mx-auto space-y-6">
+    <main className="pf-page p-6">
+      <div className="pf-container space-y-6">
 
-        {/* HEADER */}
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Generate Workout
-          </h1>
+          <h1 className="pf-heading-page">Generate Workout</h1>
 
           <button
+            type="button"
             onClick={() => router.push("/")}
-            className="text-sm text-[#7a1f2a] font-medium"
+            className="pf-link"
           >
             Back
           </button>
         </div>
 
-        {/* FORM CARD */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+        <div className="pf-card p-6 space-y-4">
 
-          {/* PHASE */}
           <div>
-            <label className="text-sm text-gray-500">Cycle Phase</label>
+            <label className="pf-label">Cycle Phase</label>
             <select
               value={phase}
               onChange={(e) => setPhase(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+              className="pf-select"
             >
               <option value="">Select Phase</option>
               <option value="menstrual">Menstrual</option>
@@ -113,13 +107,12 @@ export default function GeneratePage() {
             </select>
           </div>
 
-          {/* ENERGY */}
           <div>
-            <label className="text-sm text-gray-500">Energy Level</label>
+            <label className="pf-label">Energy Level</label>
             <select
               value={energy}
               onChange={(e) => setEnergy(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+              className="pf-select"
             >
               <option value="">Select Energy</option>
               <option value="low">Low</option>
@@ -128,13 +121,12 @@ export default function GeneratePage() {
             </select>
           </div>
 
-          {/* TIME */}
           <div>
-            <label className="text-sm text-gray-500">Workout Duration</label>
+            <label className="pf-label">Workout Duration</label>
             <select
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+              className="pf-select"
             >
               <option value="">Select Duration</option>
               <option value="20">20 min</option>
@@ -143,13 +135,12 @@ export default function GeneratePage() {
             </select>
           </div>
 
-          {/* STYLE */}
           <div>
-            <label className="text-sm text-gray-500">Workout Type</label>
+            <label className="pf-label">Workout Type</label>
             <select
               value={style}
               onChange={(e) => setStyle(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+              className="pf-select"
             >
               <option value="">Select Type</option>
               <option value="strength">Strength</option>
@@ -160,28 +151,21 @@ export default function GeneratePage() {
             </select>
           </div>
 
-          {/* NOTES */}
           <div>
-            <label className="text-sm text-gray-500">
-              Notes (optional)
-            </label>
+            <label className="pf-label">Notes (optional)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Injuries, preferences, etc."
-              className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
+              className="pf-textarea"
             />
           </div>
 
-          {/* CTA */}
           <button
+            type="button"
             onClick={generateWorkout}
             disabled={loading}
-            className={`w-full py-3 rounded font-semibold ${
-              loading
-                ? "bg-gray-400 text-white"
-                : "bg-[#7a1f2a] text-white"
-            }`}
+            className="pf-btn-primary disabled:opacity-60"
           >
             {loading ? "Generating..." : "Generate Workout"}
           </button>

@@ -214,25 +214,23 @@ export default function Home() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f9f7f7] flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
+      <main className="pf-page flex items-center justify-center">
+        <p className="pf-body-muted">Loading...</p>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f7f7] p-6 pb-10">
-      <div className="max-w-xl mx-auto space-y-8">
+    <main className="pf-page p-6 pb-10">
+      <div className="pf-container space-y-8">
 
         <div className="flex justify-between items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-            Phase Fit
-          </h1>
+          <h1 className="pf-heading-page">Phase Fit</h1>
 
           <button
             type="button"
             onClick={handleLogout}
-            className="px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-100 shrink-0"
+            className="pf-btn-secondary shrink-0 !w-auto !py-2 !px-3 text-sm"
           >
             Logout
           </button>
@@ -240,17 +238,17 @@ export default function Home() {
 
         {/* Hero: Today’s recommendation */}
         <section
-          className="rounded-2xl border-2 border-[#7a1f2a]/20 bg-white p-6 sm:p-8 shadow-md shadow-[#7a1f2a]/10 ring-1 ring-black/[0.03]"
+          className="pf-card-hero p-6 sm:p-8"
           aria-labelledby="todays-training-heading"
         >
           <h2
             id="todays-training-heading"
-            className="text-xl sm:text-2xl font-bold text-gray-900 text-center"
+            className="pf-heading-hero text-center"
           >
             Today’s Training Recommendation
           </h2>
 
-          <p className="mt-2 text-center text-sm text-gray-600 leading-relaxed max-w-sm mx-auto">
+          <p className="mt-2 text-center text-sm text-pf-text-secondary leading-relaxed max-w-sm mx-auto">
             Adapted to your cycle phase, recovery, and recent performance
           </p>
 
@@ -258,22 +256,22 @@ export default function Home() {
             {heroWorkout ? (
               <>
                 <div className="text-center space-y-2">
-                  <p className="text-lg sm:text-xl font-semibold text-gray-900">
+                  <p className="text-lg sm:text-xl font-semibold text-pf-text font-[family-name:var(--font-barlow-condensed)] uppercase tracking-wide">
                     {heroWorkout.workout}
                   </p>
                   {insight ? (
-                    <p className="text-sm text-[#7a1f2a]/90 leading-snug max-w-md mx-auto">
+                    <p className="text-sm text-pf-coral leading-snug max-w-md mx-auto pf-accent-italic">
                       {insight}
                     </p>
                   ) : null}
-                  <p className="text-sm text-gray-500 capitalize">
+                  <span className="pf-badge capitalize inline-block">
                     {heroWorkout.phase} phase
-                  </p>
+                  </span>
                 </div>
 
                 {heroShowsCompletedOnly ? (
                   <div className="space-y-3">
-                    <p className="text-center text-sm text-gray-600 leading-relaxed">
+                    <p className="text-center text-sm text-pf-text-secondary leading-relaxed">
                       Your latest session is complete. Review it anytime, or add
                       another round when you&apos;re ready.
                     </p>
@@ -282,14 +280,14 @@ export default function Home() {
                       onClick={() =>
                         router.push(`/workout/${heroWorkout.id}`)
                       }
-                      className="w-full rounded-xl bg-[#7a1f2a] py-4 px-4 text-base font-semibold text-white shadow-lg shadow-[#7a1f2a]/25 hover:bg-[#641a24] active:scale-[0.99] transition"
+                      className="pf-btn-primary"
                     >
                       Review Session
                     </button>
                     <button
                       type="button"
                       onClick={() => router.push("/generate")}
-                      className="w-full rounded-xl border-2 border-[#7a1f2a]/30 bg-[#f9f7f7] py-3 px-4 text-sm font-semibold text-[#7a1f2a] hover:bg-[#7a1f2a]/5 transition"
+                      className="pf-btn-secondary"
                     >
                       Generate Another Session
                     </button>
@@ -300,7 +298,7 @@ export default function Home() {
                     onClick={() =>
                       router.push(`/workout/${heroWorkout.id}`)
                     }
-                    className="w-full rounded-xl bg-[#7a1f2a] py-4 px-4 text-base font-semibold text-white shadow-lg shadow-[#7a1f2a]/25 hover:bg-[#641a24] active:scale-[0.99] transition"
+                    className="pf-btn-primary"
                   >
                     Continue Session
                   </button>
@@ -308,14 +306,14 @@ export default function Home() {
               </>
             ) : (
               <>
-                <p className="text-center text-gray-600">
+                <p className="text-center text-pf-text-secondary">
                   No workout yet today
                 </p>
 
                 <button
                   type="button"
                   onClick={() => router.push("/generate")}
-                  className="w-full rounded-xl bg-[#7a1f2a] py-4 px-4 text-base font-semibold text-white shadow-lg shadow-[#7a1f2a]/25 hover:bg-[#641a24] active:scale-[0.99] transition"
+                  className="pf-btn-primary"
                 >
                   Generate Today’s Workout
                 </button>
@@ -328,7 +326,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setShowOutsideModal(true)}
-            className="text-sm text-gray-600 hover:text-[#7a1f2a] font-medium py-2 px-3 rounded-lg hover:bg-white/80 transition"
+            className="pf-link font-medium py-2 px-3 rounded-lg hover:bg-pf-card transition"
           >
             + Log Outside Workout
           </button>
@@ -336,9 +334,9 @@ export default function Home() {
 
         {showOutsideModal && (
           <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="pf-card p-5 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="pf-heading-section">
                   Log outside activity
                 </h2>
                 <button
@@ -347,25 +345,25 @@ export default function Home() {
                     setShowOutsideModal(false);
                     resetOutsideForm();
                   }}
-                  className="text-sm text-gray-500 hover:text-gray-800"
+                  className="text-sm text-pf-text-muted hover:text-pf-text"
                 >
                   Close
                 </button>
               </div>
 
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-pf-text-secondary">
                 Quick log for activities done outside the app — helps coaching
                 understand your overall load.
               </p>
 
               <div>
-                <label className="text-sm text-gray-500">Activity</label>
+                <label className="pf-label">Activity</label>
                 <input
                   list="outside-activity-presets"
                   value={outsideActivity}
                   onChange={(e) => setOutsideActivity(e.target.value)}
                   placeholder="e.g. Pilates, Run, Yoga"
-                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-600"
+                  className="pf-input"
                 />
                 <datalist id="outside-activity-presets">
                   {OUTSIDE_ACTIVITY_PRESETS.map((a) => (
@@ -375,7 +373,7 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500">Duration (minutes)</label>
+                <label className="pf-label">Duration (minutes)</label>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -383,16 +381,16 @@ export default function Home() {
                   value={outsideDuration}
                   onChange={(e) => setOutsideDuration(e.target.value)}
                   placeholder="45"
-                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-600"
+                  className="pf-input"
                 />
               </div>
 
               <div>
-                <label className="text-sm text-gray-500">Intensity</label>
+                <label className="pf-label">Intensity</label>
                 <select
                   value={outsideIntensity}
                   onChange={(e) => setOutsideIntensity(e.target.value)}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 [color-scheme:light]"
+                  className="pf-select"
                 >
                   <option value="">Select</option>
                   {OUTSIDE_INTENSITY_OPTIONS.map((level) => (
@@ -404,13 +402,13 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500">Notes (optional)</label>
+                <label className="pf-label">Notes (optional)</label>
                 <textarea
                   value={outsideNotes}
                   onChange={(e) => setOutsideNotes(e.target.value)}
                   placeholder="How it felt, anything relevant"
                   rows={2}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-600"
+                  className="pf-textarea"
                 />
               </div>
 
@@ -418,7 +416,7 @@ export default function Home() {
                 type="button"
                 onClick={saveOutsideWorkout}
                 disabled={savingOutside}
-                className="w-full py-3 rounded-lg font-semibold bg-[#7a1f2a] text-white disabled:opacity-60"
+                className="pf-btn-primary disabled:opacity-60"
               >
                 {savingOutside ? "Saving…" : "Save activity"}
               </button>

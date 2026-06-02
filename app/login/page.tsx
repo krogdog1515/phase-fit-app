@@ -29,67 +29,54 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f9f7f7] flex items-center justify-center p-6">
+    <main className="pf-page flex items-center justify-center p-6">
       <div className="w-full max-w-md space-y-6">
 
-        {/* LOGO / TITLE */}
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Phase Fit
-          </h1>
-          <p className="text-sm text-gray-500">
+        <div className="text-center space-y-2">
+          <h1 className="pf-heading-page">Phase Fit</h1>
+          <p className="pf-accent-italic pf-body-muted">
             Smarter training, aligned with your cycle
           </p>
         </div>
 
-        {/* CARD */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+        <div className="pf-card p-6 space-y-4">
 
-          <h2 className="text-lg font-semibold text-gray-900">
-            Login
-          </h2>
+          <h2 className="pf-heading-section text-base">Login</h2>
 
-          {/* EMAIL */}
           <div>
-            <label className="text-sm text-gray-500">Email</label>
+            <label className="pf-label">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded"
+              className="pf-input"
             />
           </div>
 
-          {/* PASSWORD */}
           <div>
-            <label className="text-sm text-gray-500">Password</label>
+            <label className="pf-label">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full mt-1 p-3 border border-gray-300 rounded"
+              className="pf-input"
             />
           </div>
 
-          {/* BUTTON */}
           <button
+            type="button"
             onClick={handleLogin}
             disabled={loading}
-            className={`w-full py-3 rounded font-semibold ${
-              loading
-                ? "bg-gray-400 text-white"
-                : "bg-[#7a1f2a] text-white"
-            }`}
+            className="pf-btn-primary disabled:opacity-60"
           >
             {loading ? "Logging in..." : "Login"}
           </button>
 
-          {/* SIGN UP */}
           <p
             onClick={() => router.push("/signup")}
-            className="text-sm text-center text-[#7a1f2a] cursor-pointer font-medium"
+            className="pf-link text-center block"
           >
-            Don’t have an account? Sign up
+            Don&apos;t have an account? Sign up
           </p>
 
         </div>

@@ -1,26 +1,262 @@
 @import "tailwindcss";
 
+/* ── PhaseFit design tokens ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --pf-coral: #f2736a;
+  --pf-coral-hover: #e0655d;
+  --pf-peach: #f5a898;
+  --pf-bg: #faf0ec;
+  --pf-card: #fdf5f3;
+  --pf-text: #1a1a1a;
+  --pf-text-secondary: #5a3a36;
+  --pf-text-muted: #9a7a76;
+  --pf-border: #f0d8d4;
+  --pf-radius: 16px;
+  --pf-shadow: 0 4px 24px rgba(242, 115, 106, 0.08);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-pf-coral: var(--pf-coral);
+  --color-pf-coral-hover: var(--pf-coral-hover);
+  --color-pf-peach: var(--pf-peach);
+  --color-pf-bg: var(--pf-bg);
+  --color-pf-card: var(--pf-card);
+  --color-pf-text: var(--pf-text);
+  --color-pf-text-secondary: var(--pf-text-secondary);
+  --color-pf-text-muted: var(--pf-text-muted);
+  --color-pf-border: var(--pf-border);
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-barlow-condensed), ui-sans-serif, sans-serif;
+  --font-accent: var(--font-barlow-accent), ui-sans-serif, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--pf-bg);
+  color: var(--pf-text);
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── Layout shells ── */
+.pf-page {
+  min-height: 100vh;
+  background: var(--pf-bg);
+}
+
+.pf-container {
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Typography ── */
+.pf-heading-page {
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-weight: 800;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pf-text);
+}
+
+.pf-heading-section {
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-weight: 800;
+  font-size: 1.125rem;
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pf-text);
+}
+
+.pf-heading-hero {
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-weight: 900;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pf-text);
+}
+
+@media (min-width: 640px) {
+  .pf-heading-hero {
+    font-size: 1.5rem;
+  }
+}
+
+.pf-accent-italic {
+  font-family: var(--font-barlow-accent), sans-serif;
+  font-style: italic;
+}
+
+.pf-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--pf-text-muted);
+}
+
+.pf-body-muted {
+  font-size: 0.875rem;
+  color: var(--pf-text-muted);
+  line-height: 1.5;
+}
+
+.pf-body-secondary {
+  font-size: 0.875rem;
+  color: var(--pf-text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Cards ── */
+.pf-card {
+  background: var(--pf-card);
+  border: 1px solid var(--pf-border);
+  border-radius: var(--pf-radius);
+  box-shadow: var(--pf-shadow);
+}
+
+.pf-card-hero {
+  background: var(--pf-card);
+  border: 1px solid var(--pf-border);
+  border-radius: var(--pf-radius);
+  box-shadow: 0 8px 32px rgba(242, 115, 106, 0.12);
+}
+
+/* ── Buttons ── */
+.pf-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: var(--pf-radius);
+  background: var(--pf-coral);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: background 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 4px 16px rgba(242, 115, 106, 0.28);
+}
+
+.pf-btn-primary:hover:not(:disabled) {
+  background: var(--pf-coral-hover);
+}
+
+.pf-btn-primary:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.pf-btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pf-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: var(--pf-radius);
+  border: 1.5px solid var(--pf-border);
+  background: var(--pf-bg);
+  color: var(--pf-text-secondary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pf-btn-secondary:hover:not(:disabled) {
+  background: var(--pf-card);
+  border-color: var(--pf-peach);
+}
+
+.pf-btn-ghost {
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--pf-border);
+  background: transparent;
+  color: var(--pf-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+.pf-btn-ghost:hover {
+  background: var(--pf-card);
+}
+
+.pf-link {
+  color: var(--pf-coral);
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.pf-link:hover {
+  opacity: 0.85;
+}
+
+/* ── Form controls ── */
+.pf-input,
+.pf-select,
+.pf-textarea {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--pf-border);
+  background: #ffffff;
+  color: var(--pf-text);
+  font-size: 1rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pf-input::placeholder,
+.pf-textarea::placeholder {
+  color: var(--pf-text-muted);
+}
+
+.pf-input:focus,
+.pf-select:focus,
+.pf-textarea:focus {
+  outline: none;
+  border-color: var(--pf-peach);
+  box-shadow: 0 0 0 3px rgba(245, 168, 152, 0.35);
+}
+
+.pf-select {
+  color-scheme: light;
+}
+
+/* ── Badges ── */
+.pf-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: rgba(242, 115, 106, 0.12);
+  color: var(--pf-coral);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+}
+
+.pf-badge-coral {
+  display: inline-block;
+  padding: 0.2rem 0.625rem;
+  border-radius: 9999px;
+  background: var(--pf-coral);
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Modal overlay ── */
+.pf-overlay {
+  background: rgba(26, 26, 26, 0.35);
 }

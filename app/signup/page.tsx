@@ -30,39 +30,55 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center">
-      <div className="bg-[#111] p-8 rounded-xl w-full max-w-md space-y-4">
-        <h1 className="text-2xl font-bold">Sign Up</h1>
+    <main className="pf-page flex items-center justify-center p-6">
+      <div className="w-full max-w-md space-y-6">
 
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full p-3 rounded bg-white text-black"
-        />
+        <div className="text-center space-y-2">
+          <h1 className="pf-heading-page">Phase Fit</h1>
+          <p className="pf-body-muted">Create your account</p>
+        </div>
 
-        <input
-          type="password"
-          placeholder="Password (min 6 chars)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-3 rounded bg-white text-black"
-        />
+        <div className="pf-card p-6 space-y-4">
+          <h2 className="pf-heading-section text-base">Sign Up</h2>
 
-        <button
-          onClick={handleSignup}
-          className="w-full bg-white text-black py-3 rounded font-semibold"
-        >
-          {loading ? "Creating account..." : "Sign Up"}
-        </button>
+          <div>
+            <label className="pf-label">Email</label>
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="pf-input"
+            />
+          </div>
 
-        <p
-          className="text-sm text-gray-400 cursor-pointer"
-          onClick={() => router.push("/login")}
-        >
-          Already have an account? Login
-        </p>
+          <div>
+            <label className="pf-label">Password</label>
+            <input
+              type="password"
+              placeholder="Password (min 6 chars)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="pf-input"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSignup}
+            disabled={loading}
+            className="pf-btn-primary disabled:opacity-60"
+          >
+            {loading ? "Creating account..." : "Sign Up"}
+          </button>
+
+          <p
+            onClick={() => router.push("/login")}
+            className="pf-link text-center block"
+          >
+            Already have an account? Login
+          </p>
+        </div>
       </div>
     </main>
   );

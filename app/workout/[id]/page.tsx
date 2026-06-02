@@ -449,48 +449,48 @@ export default function WorkoutPage() {
 
   if (!workout) {
     return (
-      <main className="min-h-screen bg-[#f9f7f7] flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
+      <main className="pf-page flex items-center justify-center">
+        <p className="pf-body-muted">Loading...</p>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f7f7] p-6">
-      <div className="max-w-xl mx-auto space-y-6">
+    <main className="pf-page p-6">
+      <div className="pf-container space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="pf-heading-page">
             Today’s Workout
           </h1>
 
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="text-sm text-[#7a1f2a] font-medium"
+            className="pf-link"
           >
             Back
           </button>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-3">
-          <p className="text-sm text-[#7a1f2a] font-semibold">
+        <div className="pf-card p-6 space-y-3">
+          <p className="text-sm text-pf-coral font-semibold uppercase tracking-wide">
             Cycle-Based Coaching
           </p>
 
-          <p className="text-lg font-semibold text-gray-900">
+          <p className="text-lg font-semibold text-pf-text">
             {workout.cycle_guidance?.summary}
           </p>
 
-          <div className="text-sm text-gray-600 space-y-1">
+          <div className="text-sm text-pf-text-secondary space-y-1">
             <p>
-              <span className="font-medium text-gray-900">
+              <span className="font-medium text-pf-text">
                 During workout:
               </span>{" "}
               {workout.cycle_guidance?.during_workout}
             </p>
 
             <p>
-              <span className="font-medium text-gray-900">
+              <span className="font-medium text-pf-text">
                 Adjust if needed:
               </span>{" "}
               {workout.cycle_guidance?.adjustments}
@@ -499,25 +499,25 @@ export default function WorkoutPage() {
         </div>
 
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Your Plan</h2>
+          <h2 className="pf-heading-section">Your Plan</h2>
 
           {flowBlocks.length > 0 && movements.length === 0 ? (
             <div className="space-y-3">
               {workout.intensity ? (
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-pf-text-secondary">
                   Intensity: {workout.intensity}
                 </p>
               ) : null}
               {flowBlocks.map((block, i) => (
                 <div
                   key={i}
-                  className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-2"
+                  className="pf-card p-5 space-y-2"
                 >
-                  <p className="font-semibold text-gray-900">{block.block}</p>
+                  <p className="font-semibold text-pf-text">{block.block}</p>
                   {block.duration ? (
-                    <p className="text-sm text-[#7a1f2a]">{block.duration}</p>
+                    <p className="text-sm text-pf-coral">{block.duration}</p>
                   ) : null}
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  <p className="text-sm text-pf-text-secondary leading-relaxed whitespace-pre-wrap">
                     {block.instructions}
                   </p>
                 </div>
@@ -535,12 +535,12 @@ export default function WorkoutPage() {
             return (
             <div
               key={i}
-              className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-3"
+              className="pf-card p-5 space-y-3"
             >
               <input
                 value={item.name}
                 onChange={(e) => updateMovementName(i, e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded font-semibold bg-white text-gray-900 placeholder:text-gray-600"
+                className="pf-input !mt-0 font-semibold"
               />
 
               {showProgression ? (
@@ -553,11 +553,11 @@ export default function WorkoutPage() {
                 />
               ) : (
                 <>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-pf-text-muted">
                     {item.sets} sets • {item.reps} • RIR {item.rir}
                   </p>
                   {item.note ? (
-                    <p className="text-sm text-[#7a1f2a]">{item.note}</p>
+                    <p className="text-sm text-pf-coral">{item.note}</p>
                   ) : null}
                 </>
               )}
@@ -565,7 +565,7 @@ export default function WorkoutPage() {
               <div className="space-y-2">
                 {item.logs.map((set, idx) => (
                   <div key={idx} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                    <span className="text-xs text-gray-500 w-14 shrink-0">
+                    <span className="text-xs text-pf-text-muted w-14 shrink-0">
                       Set {idx + 1}
                     </span>
                     <input
@@ -576,7 +576,7 @@ export default function WorkoutPage() {
                       onChange={(e) =>
                         updateSet(i, idx, "weight", e.target.value)
                       }
-                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
+                      className="pf-input !mt-0 !py-2"
                     />
                     <input
                       type="text"
@@ -586,7 +586,7 @@ export default function WorkoutPage() {
                       onChange={(e) =>
                         updateSet(i, idx, "reps", e.target.value)
                       }
-                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
+                      className="pf-input !mt-0 !py-2"
                     />
                   </div>
                 ))}
@@ -596,7 +596,7 @@ export default function WorkoutPage() {
                 placeholder="Notes (optional)"
                 value={item.notes}
                 onChange={(e) => updateNotes(i, e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
+                className="pf-textarea !mt-0 !py-2"
               />
             </div>
             );
@@ -606,30 +606,30 @@ export default function WorkoutPage() {
         <button
           type="button"
           onClick={() => setShowFeedback(true)}
-          className="w-full py-3 rounded font-semibold bg-[#7a1f2a] text-white"
+          className="pf-btn-primary"
         >
           Finish Workout
         </button>
 
         {showFeedback && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-              <h2 className="text-lg font-semibold text-gray-900">
+            <div className="pf-card p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+              <h2 className="pf-heading-section">
                 How did it go?
               </h2>
 
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-pf-text-secondary">
                 {flowBlocks.length > 0 && movements.length === 0
                   ? "Share how the session felt—your feedback shapes future coaching."
                   : "Your logged sets (weight × reps) are saved for progressive overload. Add quick feedback below—coaching uses this on the next generation."}
               </p>
 
               <div>
-                <label className="text-sm text-gray-500">Completed</label>
+                <label className="pf-label">Completed</label>
                 <select
                   value={completed}
                   onChange={(e) => setCompleted(e.target.value)}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+                  className="pf-select"
                 >
                   <option value="">Select</option>
                   <option value="full">Full workout</option>
@@ -639,11 +639,11 @@ export default function WorkoutPage() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500">Difficulty</label>
+                <label className="pf-label">Difficulty</label>
                 <select
                   value={difficulty}
                   onChange={(e) => setDifficulty(e.target.value)}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+                  className="pf-select"
                 >
                   <option value="">Select</option>
                   {DIFFICULTY_VALUES.map((v) => (
@@ -655,11 +655,11 @@ export default function WorkoutPage() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500">Energy after</label>
+                <label className="pf-label">Energy after</label>
                 <select
                   value={energyShift}
                   onChange={(e) => setEnergyShift(e.target.value)}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900"
+                  className="pf-select"
                 >
                   <option value="">Select</option>
                   <option value="better">Better</option>
@@ -669,7 +669,7 @@ export default function WorkoutPage() {
               </div>
 
               <div>
-                <label className="text-sm text-gray-500">
+                <label className="pf-label">
                   How did this workout feel?
                 </label>
                 <textarea
@@ -677,7 +677,7 @@ export default function WorkoutPage() {
                   onChange={(e) => setUserNotes(e.target.value)}
                   placeholder="Optional — e.g. Felt strong today, lower back tight during hinges"
                   rows={3}
-                  className="w-full mt-1 p-3 border border-gray-300 rounded bg-white text-gray-900 placeholder:text-gray-600"
+                  className="pf-textarea"
                 />
               </div>
 
@@ -686,7 +686,7 @@ export default function WorkoutPage() {
                   type="button"
                   onClick={() => setShowFeedback(false)}
                   disabled={saving}
-                  className="flex-1 py-2 rounded border border-gray-300 text-gray-800"
+                  className="flex-1 pf-btn-secondary !w-auto"
                 >
                   Cancel
                 </button>
@@ -694,7 +694,7 @@ export default function WorkoutPage() {
                   type="button"
                   onClick={saveWorkout}
                   disabled={saving}
-                  className="flex-1 bg-[#7a1f2a] text-white py-2 rounded font-semibold disabled:opacity-60"
+                  className="flex-1 pf-btn-primary !w-auto disabled:opacity-60"
                 >
                   {saving ? "Saving…" : "Save & finish"}
                 </button>
