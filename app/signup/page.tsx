@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import PhaseFitLogo from "../components/PhaseFitLogo";
 import supabase from "../lib/supabase";
 
 export default function SignupPage() {
@@ -34,7 +35,7 @@ export default function SignupPage() {
       <div className="w-full max-w-md space-y-6">
 
         <div className="text-center space-y-2">
-          <h1 className="pf-heading-page">Phase Fit</h1>
+          <PhaseFitLogo variant="auth" className="flex justify-center" priority />
           <p className="pf-body-muted">Create your account</p>
         </div>
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import WorkoutCalendar from "./components/WorkoutCalendar";
+import PhaseFitLogo from "./components/PhaseFitLogo";
 import supabase from "./lib/supabase";
 import { normalizeDifficulty } from "./lib/difficulty";
 
@@ -225,7 +226,7 @@ export default function Home() {
       <div className="pf-container space-y-8">
 
         <div className="flex justify-between items-center gap-3">
-          <h1 className="pf-heading-page">Phase Fit</h1>
+          <PhaseFitLogo variant="header" className="shrink-0" priority />
 
           <button
             type="button"

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import PhaseFitLogo from "../components/PhaseFitLogo";
 import supabase from "../lib/supabase";
 
 export default function LoginPage() {
@@ -33,7 +34,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
 
         <div className="text-center space-y-2">
-          <h1 className="pf-heading-page">Phase Fit</h1>
+          <PhaseFitLogo variant="auth" className="flex justify-center" priority />
           <p className="pf-accent-italic pf-body-muted">
             Smarter training, aligned with your cycle
           </p>
