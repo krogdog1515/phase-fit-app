@@ -15,11 +15,13 @@ import {
 type WorkoutCalendarProps = {
   workouts: CalendarWorkout[];
   outsideActivityDates?: string[];
+  hideHeading?: boolean;
 };
 
 export default function WorkoutCalendar({
   workouts,
   outsideActivityDates = [],
+  hideHeading = false,
 }: WorkoutCalendarProps) {
   const router = useRouter();
   const today = new Date();
@@ -54,25 +56,40 @@ export default function WorkoutCalendar({
   const todayKey = toLocalDateKey(today);
 
   return (
-    <section className="pf-card p-4 sm:p-5" aria-label="Workout calendar">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="pf-heading-section">Your timeline</h2>
-        <div className="flex items-center gap-1">
+    <section
+      className="pf-card p-5 sm:p-6 overflow-hidden"
+      aria-label="Workout calendar"
+    >
+      <div
+        className={`flex items-center justify-between gap-3 ${
+          hideHeading ? "mb-5" : "mb-4"
+        }`}
+      >
+        {!hideHeading ? (
+          <h2 className="pf-heading-section">Your timeline</h2>
+        ) : (
+          <span className="text-sm font-medium text-pf-text-secondary">
+            {monthLabel}
+          </span>
+        )}
+        <div className="flex items-center gap-1 ml-auto">
           <button
             type="button"
             onClick={() => shiftMonth(-1)}
-            className="p-2 rounded-lg text-pf-text-muted hover:bg-pf-bg text-sm transition"
+            className="p-2 rounded-xl text-pf-text-muted hover:bg-pf-bg hover:text-pf-coral text-base transition"
             aria-label="Previous month"
           >
             ‹
           </button>
-          <span className="text-sm font-medium text-pf-text-secondary min-w-[8.5rem] text-center">
-            {monthLabel}
-          </span>
+          {hideHeading ? null : (
+            <span className="text-sm font-medium text-pf-text-secondary min-w-[8.5rem] text-center">
+              {monthLabel}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => shiftMonth(1)}
-            className="p-2 rounded-lg text-pf-text-muted hover:bg-pf-bg text-sm transition"
+            className="p-2 rounded-xl text-pf-text-muted hover:bg-pf-bg hover:text-pf-coral text-base transition"
             aria-label="Next month"
           >
             ›
@@ -80,7 +97,9 @@ export default function WorkoutCalendar({
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 mb-1">
+      <div className="h-px bg-pf-border mb-4" />
+
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5">
         {WEEKDAY_LABELS.map((label, i) => (
           <div
             key={`${label}-${i}`}
@@ -91,7 +110,7 @@ export default function WorkoutCalendar({
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1.5">
         {cells.map((date, i) => {
           if (!date) {
             return <div key={`empty-${i}`} className="aspect-square" />;
@@ -162,7 +181,7 @@ export default function WorkoutCalendar({
         })}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-pf-text-muted">
+      <div className="mt-5 pt-4 border-t border-pf-border flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-pf-text-muted">
         {Object.entries(PHASE_STYLES).map(([phase, style]) => (
           <span key={phase} className="inline-flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full ${style.dot}`} />

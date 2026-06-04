@@ -1,21 +1,29 @@
+"use client";
+
 import Image from "next/image";
 
 const LOGO_WIDTH = 388;
 const LOGO_HEIGHT = 210;
 
 type PhaseFitLogoProps = {
-  /** Header bar (home) vs centered auth screens */
-  variant?: "header" | "auth";
+  /** Header bar, auth screens, or home dashboard hero */
+  variant?: "header" | "auth" | "dashboard";
   className?: string;
   priority?: boolean;
 };
+
+const VARIANT_HEIGHT = {
+  header: 36,
+  auth: 64,
+  dashboard: 56,
+} as const;
 
 export default function PhaseFitLogo({
   variant = "header",
   className = "",
   priority = false,
 }: PhaseFitLogoProps) {
-  const height = variant === "auth" ? 64 : 36;
+  const height = VARIANT_HEIGHT[variant] ?? VARIANT_HEIGHT.header;
   const width = Math.round(height * (LOGO_WIDTH / LOGO_HEIGHT));
 
   return (

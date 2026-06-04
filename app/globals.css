@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "./**/*.{js,ts,jsx,tsx}";
 
 /* ── PhaseFit design tokens ── */
 :root {
@@ -259,4 +260,115 @@ body {
 /* ── Modal overlay ── */
 .pf-overlay {
   background: rgba(26, 26, 26, 0.35);
+}
+
+/* ── Home dashboard ── */
+.pf-home-hero {
+  background: linear-gradient(
+    180deg,
+    rgba(253, 245, 243, 0.95) 0%,
+    var(--pf-bg) 72%
+  );
+}
+
+.pf-section-eyebrow {
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-coral);
+}
+
+.pf-btn-primary-prominent {
+  padding: 1rem 1.25rem;
+  font-size: 1.0625rem;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 20px rgba(242, 115, 106, 0.32);
+}
+
+.pf-outside-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border-radius: var(--pf-radius);
+  border: 1.5px dashed var(--pf-peach);
+  background: rgba(253, 245, 243, 0.6);
+  color: var(--pf-text-secondary);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.pf-outside-cta:hover {
+  background: var(--pf-card);
+  border-color: var(--pf-coral);
+  color: var(--pf-coral);
+}
+
+/* ── Generate workout ── */
+.pf-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pf-form-section-title {
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pf-text);
+}
+
+.pf-form-section-hint {
+  font-size: 0.8125rem;
+  color: var(--pf-text-muted);
+  line-height: 1.45;
+  margin-top: -0.25rem;
+}
+
+.pf-form-divider {
+  height: 1px;
+  background: var(--pf-border);
+  margin: 1.25rem 0;
+}
+
+.pf-generate-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(250, 240, 236, 0.88);
+  backdrop-filter: blur(4px);
+}
+
+.pf-generate-loading-card {
+  width: 100%;
+  max-width: 20rem;
+  text-align: center;
+  padding: 2rem 1.5rem;
+}
+
+.pf-loading-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0 auto 1rem;
+  border: 3px solid var(--pf-border);
+  border-top-color: var(--pf-coral);
+  border-radius: 9999px;
+  animation: pf-spin 0.8s linear infinite;
+}
+
+@keyframes pf-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

@@ -213,6 +213,16 @@ export default function Home() {
       ? buildAdaptiveInsight(heroWorkout, priorWorkout)
       : null;
 
+  const heroHeadline =
+    insight ??
+    (heroWorkout
+      ? "Your session is ready when you are"
+      : "Train smarter through every phase");
+
+  const heroSubcopy = heroWorkout
+    ? "Personalized to your cycle, recovery, and recent performance"
+    : "Adaptive coaching that meets you where you are today";
+
   if (loading) {
     return (
       <main className="pf-page flex items-center justify-center">
@@ -222,57 +232,67 @@ export default function Home() {
   }
 
   return (
-    <main className="pf-page p-6 pb-10">
-      <div className="pf-container space-y-8">
+    <main className="pf-page pb-12">
+      {/* Utility bar */}
+      <div className="px-5 pt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="pf-btn-ghost"
+        >
+          Logout
+        </button>
+      </div>
 
-        <div className="flex justify-between items-center gap-3">
-          <PhaseFitLogo variant="header" className="shrink-0" priority />
+      {/* Branded hero */}
+      <section
+        className="pf-home-hero px-5 pt-4 pb-8 sm:pb-10 text-center"
+        aria-label="Welcome"
+      >
+        <PhaseFitLogo
+          variant="dashboard"
+          className="flex justify-center mb-6"
+          priority
+        />
+        <p className="pf-section-eyebrow mb-2">Adaptive coaching</p>
+        <h2 className="pf-heading-hero max-w-md mx-auto leading-snug">
+          {heroHeadline}
+        </h2>
+        <p className="mt-3 pf-body-secondary max-w-sm mx-auto text-[0.9375rem]">
+          {heroSubcopy}
+        </p>
+      </section>
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="pf-btn-secondary shrink-0 !w-auto !py-2 !px-3 text-sm"
-          >
-            Logout
-          </button>
-        </div>
+      <div className="pf-container px-5 space-y-7 sm:space-y-8">
 
-        {/* Hero: Today’s recommendation */}
+        {/* Today's recommendation */}
         <section
-          className="pf-card-hero p-6 sm:p-8"
+          className="pf-card-hero p-6 sm:p-8 -mt-2"
           aria-labelledby="todays-training-heading"
         >
+          <p className="pf-section-eyebrow mb-2">Today</p>
           <h2
             id="todays-training-heading"
-            className="pf-heading-hero text-center"
+            className="pf-heading-section text-xl sm:text-2xl"
           >
-            Today’s Training Recommendation
+            Today&apos;s Training Recommendation
           </h2>
 
-          <p className="mt-2 text-center text-sm text-pf-text-secondary leading-relaxed max-w-sm mx-auto">
-            Adapted to your cycle phase, recovery, and recent performance
-          </p>
-
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 space-y-5">
             {heroWorkout ? (
               <>
-                <div className="text-center space-y-2">
-                  <p className="text-lg sm:text-xl font-semibold text-pf-text font-[family-name:var(--font-barlow-condensed)] uppercase tracking-wide">
+                <div className="space-y-3">
+                  <p className="text-xl sm:text-2xl font-bold text-pf-text font-[family-name:var(--font-barlow-condensed)] uppercase tracking-wide leading-tight">
                     {heroWorkout.workout}
                   </p>
-                  {insight ? (
-                    <p className="text-sm text-pf-coral leading-snug max-w-md mx-auto pf-accent-italic">
-                      {insight}
-                    </p>
-                  ) : null}
                   <span className="pf-badge capitalize inline-block">
                     {heroWorkout.phase} phase
                   </span>
                 </div>
 
                 {heroShowsCompletedOnly ? (
-                  <div className="space-y-3">
-                    <p className="text-center text-sm text-pf-text-secondary leading-relaxed">
+                  <div className="space-y-3 pt-1">
+                    <p className="text-sm text-pf-text-secondary leading-relaxed">
                       Your latest session is complete. Review it anytime, or add
                       another round when you&apos;re ready.
                     </p>
@@ -281,7 +301,7 @@ export default function Home() {
                       onClick={() =>
                         router.push(`/workout/${heroWorkout.id}`)
                       }
-                      className="pf-btn-primary"
+                      className="pf-btn-primary pf-btn-primary-prominent"
                     >
                       Review Session
                     </button>
@@ -299,39 +319,42 @@ export default function Home() {
                     onClick={() =>
                       router.push(`/workout/${heroWorkout.id}`)
                     }
-                    className="pf-btn-primary"
+                    className="pf-btn-primary pf-btn-primary-prominent"
                   >
                     Continue Session
                   </button>
                 )}
               </>
             ) : (
-              <>
-                <p className="text-center text-pf-text-secondary">
-                  No workout yet today
+              <div className="space-y-5">
+                <p className="text-pf-text-secondary text-[0.9375rem] leading-relaxed">
+                  No workout yet today — generate one tailored to how you feel
+                  right now.
                 </p>
 
                 <button
                   type="button"
                   onClick={() => router.push("/generate")}
-                  className="pf-btn-primary"
+                  className="pf-btn-primary pf-btn-primary-prominent"
                 >
-                  Generate Today’s Workout
+                  Generate Today&apos;s Workout
                 </button>
-              </>
+              </div>
             )}
           </div>
         </section>
 
-        <div className="flex justify-center -mt-4">
-          <button
-            type="button"
-            onClick={() => setShowOutsideModal(true)}
-            className="pf-link font-medium py-2 px-3 rounded-lg hover:bg-pf-card transition"
-          >
-            + Log Outside Workout
-          </button>
-        </div>
+        {/* Outside workout */}
+        <button
+          type="button"
+          onClick={() => setShowOutsideModal(true)}
+          className="pf-outside-cta"
+        >
+          <span aria-hidden className="text-lg leading-none text-pf-coral">
+            +
+          </span>
+          Log Outside Workout
+        </button>
 
         {showOutsideModal && (
           <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center p-4 z-50">
@@ -425,10 +448,24 @@ export default function Home() {
           </div>
         )}
 
-        <WorkoutCalendar
-          workouts={workouts}
-          outsideActivityDates={outsideActivityDates}
-        />
+        {/* Timeline */}
+        <section aria-labelledby="timeline-heading">
+          <div className="mb-4 px-0.5">
+            <p className="pf-section-eyebrow mb-1.5">Your progress</p>
+            <h2 id="timeline-heading" className="pf-heading-section">
+              Training Timeline
+            </h2>
+            <p className="mt-1.5 pf-body-muted text-[0.8125rem]">
+              Sessions and outside activity mapped to your cycle
+            </p>
+          </div>
+
+          <WorkoutCalendar
+            workouts={workouts}
+            outsideActivityDates={outsideActivityDates}
+            hideHeading
+          />
+        </section>
 
       </div>
     </main>
