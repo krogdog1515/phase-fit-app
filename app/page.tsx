@@ -64,6 +64,34 @@ const OUTSIDE_ACTIVITY_PRESETS = [
 
 const OUTSIDE_INTENSITY_OPTIONS = ["light", "moderate", "hard"] as const;
 
+const CYCLE_PHASE_OPTIONS = [
+  { value: "menstrual", label: "Menstrual" },
+  { value: "follicular", label: "Follicular" },
+  { value: "ovulatory", label: "Ovulatory" },
+  { value: "luteal", label: "Luteal" },
+] as const;
+
+type CyclePhaseValue = (typeof CYCLE_PHASE_OPTIONS)[number]["value"];
+
+function isKnownCyclePhase(value: string | undefined): value is CyclePhaseValue {
+  if (!value) return false;
+  return CYCLE_PHASE_OPTIONS.some((option) => option.value === value.toLowerCase());
+}
+
+function resolveKnownPhase(workouts: WorkoutRow[]): CyclePhaseValue | "" {
+  const candidates = [
+    workouts.find((w) => isCreatedToday(w.created_at))?.phase,
+    workouts[0]?.phase,
+  ];
+
+  for (const phase of candidates) {
+    const normalized = (phase ?? "").toLowerCase();
+    if (isKnownCyclePhase(normalized)) return normalized;
+  }
+
+  return "";
+}
+
 function isCreatedToday(isoDate: string): boolean {
   const d = new Date(isoDate);
   const now = new Date();
@@ -88,6 +116,7 @@ export default function Home() {
   const [outsideActivity, setOutsideActivity] = useState("");
   const [outsideDuration, setOutsideDuration] = useState("");
   const [outsideIntensity, setOutsideIntensity] = useState("");
+  const [outsideCyclePhase, setOutsideCyclePhase] = useState<CyclePhaseValue | "">("");
   const [outsideNotes, setOutsideNotes] = useState("");
   const [savingOutside, setSavingOutside] = useState(false);
 
@@ -100,7 +129,13 @@ export default function Home() {
     setOutsideActivity("");
     setOutsideDuration("");
     setOutsideIntensity("");
+    setOutsideCyclePhase("");
     setOutsideNotes("");
+  };
+
+  const openOutsideModal = () => {
+    setOutsideCyclePhase(resolveKnownPhase(workouts));
+    setShowOutsideModal(true);
   };
 
   const saveOutsideWorkout = async () => {
@@ -120,6 +155,10 @@ export default function Home() {
       alert("Select intensity.");
       return;
     }
+    if (!isKnownCyclePhase(outsideCyclePhase)) {
+      alert("Select your cycle phase.");
+      return;
+    }
 
     setSavingOutside(true);
 
@@ -128,6 +167,7 @@ export default function Home() {
       activity_type: activity,
       duration_minutes: Math.round(duration),
       intensity: outsideIntensity,
+      cycle_phase: outsideCyclePhase,
       notes: outsideNotes.trim() || null,
     });
 
@@ -347,7 +387,7 @@ export default function Home() {
         {/* Outside workout */}
         <button
           type="button"
-          onClick={() => setShowOutsideModal(true)}
+          onClick={openOutsideModal}
           className="pf-outside-cta"
         >
           <span aria-hidden className="text-lg leading-none text-pf-coral">
@@ -424,6 +464,28 @@ export default function Home() {
                   ))}
                 </select>
               </div>
+
+              <fieldset className="border-0 p-0 m-0">
+                <legend className="pf-label mb-2">Cycle phase</legend>
+                <div className="pf-radio-group" role="radiogroup" aria-label="Cycle phase">
+                  {CYCLE_PHASE_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="pf-radio-option"
+                    >
+                      <input
+                        type="radio"
+                        name="outside-cycle-phase"
+                        value={option.value}
+                        checked={outsideCyclePhase === option.value}
+                        onChange={() => setOutsideCyclePhase(option.value)}
+                        className="pf-radio-input"
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
 
               <div>
                 <label className="pf-label">Notes (optional)</label>
