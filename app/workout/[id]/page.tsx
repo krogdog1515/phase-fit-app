@@ -10,6 +10,7 @@ import {
   normalizeDifficultyForStorage,
 } from "../../lib/difficulty";
 import MovementProgressionBlock from "../../components/MovementProgressionBlock";
+import CoachingCard from "../../components/CoachingCard";
 import {
   buildLastSessionMap,
   shouldShowProgressionBlock,
@@ -472,31 +473,12 @@ export default function WorkoutPage() {
           </button>
         </div>
 
-        <div className="pf-card p-6 space-y-3">
-          <p className="text-sm text-pf-coral font-semibold uppercase tracking-wide">
-            Cycle-Based Coaching
-          </p>
-
-          <p className="text-lg font-semibold text-pf-text">
-            {workout.cycle_guidance?.summary}
-          </p>
-
-          <div className="text-sm text-pf-text-secondary space-y-1">
-            <p>
-              <span className="font-medium text-pf-text">
-                During workout:
-              </span>{" "}
-              {workout.cycle_guidance?.during_workout}
-            </p>
-
-            <p>
-              <span className="font-medium text-pf-text">
-                Adjust if needed:
-              </span>{" "}
-              {workout.cycle_guidance?.adjustments}
-            </p>
-          </div>
-        </div>
+        <CoachingCard
+          phase={workout.phase}
+          summary={workout.cycle_guidance?.summary}
+          duringWorkout={workout.cycle_guidance?.during_workout}
+          adjustments={workout.cycle_guidance?.adjustments}
+        />
 
         <div className="space-y-4">
           <h2 className="pf-heading-section">Your Plan</h2>
