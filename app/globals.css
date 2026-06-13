@@ -343,6 +343,28 @@ body {
   flex-shrink: 0;
 }
 
+.pf-radio-group-single {
+  grid-template-columns: 1fr;
+}
+
+.pf-onboarding-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.pf-onboarding-progress-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--pf-border);
+  transition: background 0.15s ease;
+}
+
+.pf-onboarding-progress-dot.is-active {
+  background: var(--pf-coral);
+}
+
 /* ── Generate workout ── */
 .pf-form-section {
   display: flex;

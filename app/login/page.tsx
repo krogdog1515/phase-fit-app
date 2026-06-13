@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PhaseFitLogo from "../components/PhaseFitLogo";
 import supabase from "../lib/supabase";
+import { resolvePostAuthRoute } from "../lib/user-profile";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,7 +26,16 @@ export default function LoginPage() {
     if (error) {
       alert(error.message);
     } else {
-      router.push("/");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const dest = await resolvePostAuthRoute(user.id);
+        router.push(dest);
+      } else {
+        router.push("/");
+      }
     }
   };
 

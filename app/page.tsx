@@ -6,6 +6,7 @@ import WorkoutCalendar from "./components/WorkoutCalendar";
 import PhaseFitLogo from "./components/PhaseFitLogo";
 import supabase from "./lib/supabase";
 import { normalizeDifficulty } from "./lib/difficulty";
+import { useOnboardingGuard } from "./lib/use-onboarding-guard";
 
 type WorkoutRow = {
   id: string;
@@ -104,6 +105,7 @@ function isCreatedToday(isoDate: string): boolean {
 
 export default function Home() {
   const router = useRouter();
+  const onboardingReady = useOnboardingGuard();
 
   const [workouts, setWorkouts] = useState<WorkoutRow[]>([]);
   const [outsideActivityDates, setOutsideActivityDates] = useState<string[]>(
@@ -188,6 +190,8 @@ export default function Home() {
   };
 
   useEffect(() => {
+    if (!onboardingReady) return;
+
     const init = async () => {
       const { data } = await supabase.auth.getUser();
 
@@ -227,7 +231,7 @@ export default function Home() {
     };
 
     init();
-  }, [router]);
+  }, [router, onboardingReady]);
 
   const todaysWorkouts = workouts.filter((w) => isCreatedToday(w.created_at));
 
@@ -263,7 +267,7 @@ export default function Home() {
     ? "Personalized to your cycle, recovery, and recent performance"
     : "Adaptive coaching that meets you where you are today";
 
-  if (loading) {
+  if (loading || !onboardingReady) {
     return (
       <main className="pf-page flex items-center justify-center">
         <p className="pf-body-muted">Loading...</p>

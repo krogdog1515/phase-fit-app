@@ -5,9 +5,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "../lib/supabase";
+import { useOnboardingGuard } from "../lib/use-onboarding-guard";
 
 export default function GenerateWorkoutClient() {
   const router = useRouter();
+  const onboardingReady = useOnboardingGuard();
 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -19,6 +21,8 @@ export default function GenerateWorkoutClient() {
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
+    if (!onboardingReady) return;
+
     const getUser = async () => {
       const { data } = await supabase.auth.getUser();
 
@@ -30,7 +34,15 @@ export default function GenerateWorkoutClient() {
     };
 
     getUser();
-  }, [router]);
+  }, [router, onboardingReady]);
+
+  if (!onboardingReady || !user) {
+    return (
+      <div className="pf-card p-6 text-center">
+        <p className="pf-body-muted">Loading...</p>
+      </div>
+    );
+  }
 
   const generateWorkout = async () => {
     if (!user) return;

@@ -15,7 +15,7 @@ export default function SignupPage() {
   const handleSignup = async () => {
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
     });
@@ -24,8 +24,10 @@ export default function SignupPage() {
 
     if (error) {
       alert(error.message);
+    } else if (data.session) {
+      router.push("/onboarding/privacy");
     } else {
-      alert("Account created. You can now log in.");
+      alert("Account created. Check your email to confirm, then log in.");
       router.push("/login");
     }
   };

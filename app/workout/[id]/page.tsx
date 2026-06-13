@@ -15,6 +15,7 @@ import {
   buildLastSessionMap,
   shouldShowProgressionBlock,
 } from "../../lib/progression-display";
+import { useOnboardingGuard } from "../../lib/use-onboarding-guard";
 
 type SetLog = {
   weight: string;
@@ -160,6 +161,7 @@ export default function WorkoutPage() {
         ? params.id[0]
         : "";
   const router = useRouter();
+  const onboardingReady = useOnboardingGuard();
 
   const [workout, setWorkout] = useState<WorkoutRow | null>(null);
   const [movements, setMovements] = useState<MovementState[]>([]);
@@ -176,6 +178,8 @@ export default function WorkoutPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!onboardingReady) return;
+
     const fetchWorkout = async () => {
       const [{ data }, logsRes] = await Promise.all([
         supabase.from("workouts").select("*").eq("id", workoutId).single(),
@@ -282,7 +286,7 @@ export default function WorkoutPage() {
     };
 
     fetchWorkout();
-  }, [workoutId]);
+  }, [workoutId, onboardingReady]);
 
   const updateMovementName = (index: number, value: string) => {
     setMovements((prev) =>
@@ -448,7 +452,7 @@ export default function WorkoutPage() {
     router.push("/");
   };
 
-  if (!workout) {
+  if (!onboardingReady || !workout) {
     return (
       <main className="pf-page flex items-center justify-center">
         <p className="pf-body-muted">Loading...</p>
