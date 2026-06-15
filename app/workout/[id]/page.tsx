@@ -471,6 +471,18 @@ export default function WorkoutPage() {
     setRegenerating(true);
 
     try {
+      const { error: skipError } = await supabase
+        .from("workouts")
+        .update({ completed: "skipped" })
+        .eq("id", workout.id);
+
+      if (skipError) {
+        console.error(skipError);
+        alert(skipError.message || "Could not update the previous workout.");
+        setRegenerating(false);
+        return;
+      }
+
       const res = await fetch("/api/generate-workout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

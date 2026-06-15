@@ -234,18 +234,13 @@ export default function Home() {
   }, [router, onboardingReady]);
 
   const todaysWorkouts = workouts.filter((w) => isCreatedToday(w.created_at));
+  const latestToday = todaysWorkouts[0] ?? null;
 
-  const activeIncompleteToday =
-    todaysWorkouts.find((w) => !isSessionComplete(w)) ?? null;
-
-  /** Newest session today when resuming; newest completed today when all are done. */
-  const heroWorkout =
-    activeIncompleteToday ?? (todaysWorkouts[0] ?? null);
+  /** Newest session today drives hero state and CTAs. */
+  const heroWorkout = latestToday;
 
   const heroShowsCompletedOnly =
-    heroWorkout != null &&
-    activeIncompleteToday == null &&
-    todaysWorkouts.length > 0;
+    heroWorkout != null && isSessionComplete(heroWorkout);
 
   const priorWorkout =
     heroWorkout != null
