@@ -16,6 +16,10 @@ import {
   shouldShowProgressionBlock,
 } from "../../lib/progression-display";
 import { useOnboardingGuard } from "../../lib/use-onboarding-guard";
+import {
+  parseGenerationParams,
+  toGenerateApiBody,
+} from "../../lib/generation-params";
 
 type SetLog = {
   weight: string;
@@ -54,6 +58,7 @@ type WorkoutRow = {
   completed?: string | null;
   energy_shift?: string | null;
   user_notes?: string | null;
+  generation_params?: unknown;
 };
 
 type WorkoutLogRow = {
@@ -176,6 +181,9 @@ export default function WorkoutPage() {
     Record<string, string>
   >({});
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  const generationParams = parseGenerationParams(workout?.generation_params);
 
   useEffect(() => {
     if (!onboardingReady) return;
@@ -452,6 +460,39 @@ export default function WorkoutPage() {
     router.push("/");
   };
 
+  const regenerateWorkout = async () => {
+    if (!workout?.user_id || !generationParams) {
+      alert(
+        "Original session settings are unavailable. Generate a new workout from the builder."
+      );
+      return;
+    }
+
+    setRegenerating(true);
+
+    try {
+      const res = await fetch("/api/generate-workout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toGenerateApiBody(workout.user_id, generationParams)),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert("Failed to regenerate workout");
+        setRegenerating(false);
+        return;
+      }
+
+      router.replace(`/workout/${data.id}`);
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong");
+      setRegenerating(false);
+    }
+  };
+
   if (!onboardingReady || !workout) {
     return (
       <main className="pf-page flex items-center justify-center">
@@ -589,13 +630,30 @@ export default function WorkoutPage() {
           })}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowFeedback(true)}
-          className="pf-btn-primary"
-        >
-          Finish Workout
-        </button>
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setShowFeedback(true)}
+            disabled={regenerating}
+            className="pf-btn-primary disabled:opacity-60"
+          >
+            Finish Workout
+          </button>
+
+          <button
+            type="button"
+            onClick={regenerateWorkout}
+            disabled={regenerating || !generationParams}
+            className="pf-btn-secondary disabled:opacity-60"
+            title={
+              generationParams
+                ? undefined
+                : "Session settings unavailable — generate a new workout from the builder"
+            }
+          >
+            {regenerating ? "Regenerating…" : "Regenerate Workout"}
+          </button>
+        </div>
 
         {showFeedback && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">

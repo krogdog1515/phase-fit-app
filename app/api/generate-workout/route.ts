@@ -14,6 +14,7 @@ import {
   getWorkoutModality,
   parseWorkoutJson,
 } from "../../lib/workout-prompts";
+import { buildGenerationParams } from "../../lib/generation-params";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -255,6 +256,13 @@ export async function POST(req: Request) {
       cardio: parsed.cardio,
       recovery: parsed.recovery,
       why: parsed.why,
+      generation_params: buildGenerationParams({
+        phase,
+        energy,
+        time,
+        style,
+        notes,
+      }),
     };
 
     const { data, error } = await supabase
