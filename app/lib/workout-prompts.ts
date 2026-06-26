@@ -376,6 +376,37 @@ export function buildSystemPrompt(
   }
 }
 
+export type UserProfile = {
+  goal: string | null;
+  life_stage: string | null;
+  training_experience: string | null;
+  training_environment: string | null;
+  training_frequency: string | null;
+  biggest_challenge: string | null;
+  preferred_training_style: string | null;
+};
+
+function buildUserProfileSection(profile: UserProfile | null | undefined): string {
+  if (!profile) return "";
+
+  const fields: [string, string | null][] = [
+    ["Goal", profile.goal],
+    ["Life stage", profile.life_stage],
+    ["Training experience", profile.training_experience],
+    ["Training environment", profile.training_environment],
+    ["Training frequency", profile.training_frequency],
+    ["Preferred style", profile.preferred_training_style],
+    ["Biggest challenge", profile.biggest_challenge],
+  ];
+
+  const lines = fields
+    .filter(([, v]) => v != null && v.trim() !== "")
+    .map(([k, v]) => `- ${k}: ${v}`);
+
+  if (lines.length === 0) return "";
+  return `User profile:\n${lines.join("\n")}`;
+}
+
 export function buildUserMessage(params: {
   phase: string;
   energy: string;
@@ -387,6 +418,7 @@ export function buildUserMessage(params: {
   outsideActivitySummary: string;
   modality: WorkoutModality;
   notesAnalysis: NotesAnalysis;
+  userProfile?: UserProfile | null;
 }): string {
   const {
     phase,
@@ -399,6 +431,7 @@ export function buildUserMessage(params: {
     outsideActivitySummary,
     modality,
     notesAnalysis,
+    userProfile,
   } = params;
 
   const perfSection =
@@ -420,8 +453,10 @@ export function buildUserMessage(params: {
     ? "\nRemember: pre-workout notes are CRITICAL where they conflict with defaults."
     : "";
 
+  const profileSection = buildUserProfileSection(userProfile);
+
   return `
-Phase: ${phase}
+${profileSection ? profileSection + "\n" : ""}Phase: ${phase}
 Energy: ${energy}
 Time: ${time} minutes requested
 Style: ${style}

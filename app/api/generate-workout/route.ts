@@ -159,23 +159,35 @@ export async function POST(req: Request) {
     const modality = getWorkoutModality(String(style));
     const notesAnalysis = analyzeUserNotes(notes ?? "");
 
-    const { data: recentForReflection } = await supabase
-      .from("workouts")
-      .select("workout, user_notes, created_at, difficulty")
-      .eq("user_id", user_id)
-      .order("created_at", { ascending: false })
-      .limit(5);
+    const [
+      { data: recentForReflection },
+      { data: recentOutside },
+      { data: userProfileData },
+    ] = await Promise.all([
+      supabase
+        .from("workouts")
+        .select("workout, user_notes, created_at, difficulty")
+        .eq("user_id", user_id)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("outside_workouts")
+        .select("activity_type, duration_minutes, intensity, notes, created_at")
+        .eq("user_id", user_id)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("user_profiles")
+        .select(
+          "goal, life_stage, training_experience, training_environment, training_frequency, biggest_challenge, preferred_training_style"
+        )
+        .eq("user_id", user_id)
+        .maybeSingle(),
+    ]);
 
     const reflectionSummary = buildReflectionSummary(
       recentForReflection ?? []
     );
-
-    const { data: recentOutside } = await supabase
-      .from("outside_workouts")
-      .select("activity_type, duration_minutes, intensity, notes, created_at")
-      .eq("user_id", user_id)
-      .order("created_at", { ascending: false })
-      .limit(5);
 
     const outsideActivitySummary = buildOutsideActivitySummary(
       recentOutside ?? []
@@ -218,6 +230,7 @@ export async function POST(req: Request) {
       outsideActivitySummary,
       modality,
       notesAnalysis,
+      userProfile: userProfileData ?? null,
     });
 
     const completion = await openai.chat.completions.create({
