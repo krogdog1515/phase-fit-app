@@ -473,6 +473,28 @@ export default function WorkoutPage() {
     router.push("/");
   };
 
+  const cancelWorkout = async () => {
+    if (!workout) return;
+    if (!confirm("Are you sure you want to cancel this workout?")) return;
+
+    const { error } = await supabase
+      .from("workouts")
+      .update({ completed: "cancelled" })
+      .eq("id", workout.id);
+
+    if (error) {
+      console.error(error);
+      alert(error.message || "Could not cancel workout.");
+      return;
+    }
+
+    if (workout.user_id) {
+      await logEvent(workout.user_id, "workout_cancelled");
+    }
+
+    router.push("/");
+  };
+
   const regenerateWorkout = async () => {
     if (!workout?.user_id || !generationParams) {
       alert(
@@ -681,6 +703,15 @@ export default function WorkoutPage() {
             }
           >
             {regenerating ? "Regenerating…" : "Regenerate Workout"}
+          </button>
+
+          <button
+            type="button"
+            onClick={cancelWorkout}
+            disabled={regenerating}
+            className="pf-link disabled:opacity-60"
+          >
+            Cancel Workout
           </button>
         </div>
 

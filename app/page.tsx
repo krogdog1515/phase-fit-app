@@ -209,6 +209,7 @@ export default function Home() {
             "id, workout, phase, intensity, created_at, completed, difficulty"
           )
           .eq("user_id", data.user.id)
+          .neq("completed", "cancelled")
           .order("created_at", { ascending: false }),
         supabase
           .from("outside_workouts")
