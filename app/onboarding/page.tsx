@@ -17,6 +17,7 @@ import {
 } from "../lib/onboarding-options";
 import supabase from "../lib/supabase";
 import { getUserProfile, saveOnboardingProfile } from "../lib/user-profile";
+import { logEvent } from "../lib/events";
 
 const STEP_OPTIONS: Record<
   (typeof ONBOARDING_STEPS)[number]["id"],
@@ -126,6 +127,7 @@ export default function OnboardingPage() {
       return;
     }
 
+    await logEvent(data.user.id, "onboarding_completed");
     router.replace("/");
   };
 

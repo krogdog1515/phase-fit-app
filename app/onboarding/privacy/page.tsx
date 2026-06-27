@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import PhaseFitLogo from "../../components/PhaseFitLogo";
 import supabase from "../../lib/supabase";
 import { getUserProfile } from "../../lib/user-profile";
+import { logEvent } from "../../lib/events";
 
 export default function OnboardingPrivacyPage() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function OnboardingPrivacyPage() {
       }
 
       if (!cancelled) {
+        void logEvent(data.user.id, "onboarding_started");
         setChecking(false);
       }
     };

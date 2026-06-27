@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PhaseFitLogo from "../components/PhaseFitLogo";
 import supabase from "../lib/supabase";
+import { logEvent } from "../lib/events";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -25,6 +26,7 @@ export default function SignupPage() {
     if (error) {
       alert(error.message);
     } else if (data.session) {
+      await logEvent(data.user!.id, "signup_completed");
       router.push("/onboarding/privacy");
     } else {
       alert("Account created. Check your email to confirm, then log in.");

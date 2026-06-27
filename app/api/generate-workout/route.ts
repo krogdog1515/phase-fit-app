@@ -292,6 +292,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const { error: eventError } = await supabase
+      .from("events")
+      .insert({
+        user_id,
+        event_name: "workout_generated",
+        metadata: { phase, style, energy, time },
+      });
+    if (eventError) console.error("[logEvent] workout_generated", eventError);
+
     return NextResponse.json({ id: data.id });
   } catch (err) {
     console.error(err);

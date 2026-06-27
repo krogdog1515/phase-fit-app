@@ -20,6 +20,7 @@ import {
   parseGenerationParams,
   toGenerateApiBody,
 } from "../../lib/generation-params";
+import { logEvent } from "../../lib/events";
 
 type SetLog = {
   weight: string;
@@ -457,6 +458,18 @@ export default function WorkoutPage() {
       return;
     }
 
+    if (
+      workout.user_id &&
+      (completed === "full" || completed === "partial")
+    ) {
+      await Promise.all([
+        logEvent(workout.user_id, "workout_completed", { completed, difficulty }),
+        logEvent(workout.user_id, "reflection_submitted", {
+          has_notes: userNotes.trim().length > 0,
+        }),
+      ]);
+    }
+
     router.push("/");
   };
 
@@ -481,6 +494,10 @@ export default function WorkoutPage() {
         alert(skipError.message || "Could not update the previous workout.");
         setRegenerating(false);
         return;
+      }
+
+      if (workout.user_id) {
+        await logEvent(workout.user_id, "regeneration_triggered");
       }
 
       const res = await fetch("/api/generate-workout", {
