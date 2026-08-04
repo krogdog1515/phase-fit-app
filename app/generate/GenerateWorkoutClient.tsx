@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "../lib/supabase";
 import { useOnboardingGuard } from "../lib/use-onboarding-guard";
+import { getUserProfile } from "../lib/user-profile";
 
 export default function GenerateWorkoutClient() {
   const router = useRouter();
@@ -13,6 +14,11 @@ export default function GenerateWorkoutClient() {
 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  // Stopgap (see /api/generate-workout): fail closed. `mode` is null until the
+  // profile read resolves; only a confirmed 'cycle' shows the form. `checking`
+  // keeps the form from flashing before we know the mode.
+  const [mode, setMode] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
 
   const [phase, setPhase] = useState("");
   const [energy, setEnergy] = useState("");
@@ -28,19 +34,52 @@ export default function GenerateWorkoutClient() {
 
       if (!data.user) {
         router.push("/login");
-      } else {
-        setUser(data.user);
+        return;
       }
+      setUser(data.user);
+      const profile = await getUserProfile(data.user.id);
+      setMode(profile?.training_mode ?? null);
+      setChecking(false);
     };
 
     getUser();
   }, [router, onboardingReady]);
 
-  if (!onboardingReady || !user) {
+  if (!onboardingReady || !user || checking) {
     return (
       <div className="pf-card p-6 text-center">
         <p className="pf-body-muted">Loading...</p>
       </div>
+    );
+  }
+
+  // Fail closed: only a confirmed 'cycle' mode may generate. Pregnancy shows the
+  // coming-soon message; any unconfirmed/other mode shows a neutral one — never
+  // the form.
+  if (mode !== "cycle") {
+    return (
+      <section className="pf-card-hero p-6 sm:p-8 text-center space-y-3">
+        <p className="pf-section-eyebrow">
+          {mode === "pregnancy" ? "Pregnancy" : "Unavailable"}
+        </p>
+        <h2 className="pf-heading-section">
+          {mode === "pregnancy"
+            ? "Pregnancy workouts are coming soon"
+            : "Workout generation is unavailable"}
+        </h2>
+        <p className="pf-body-secondary text-sm">
+          {mode === "pregnancy"
+            ? "We're building sessions tailored to your stage. Generation is paused for pregnancy mode."
+            : "We couldn't confirm your training mode just now. Head back and try again."}
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          className="pf-btn-secondary"
+        >
+          Back to home
+        </button>
+      </section>
     );
   }
 

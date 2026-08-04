@@ -11,6 +11,11 @@ export type UserProfileRow = {
   training_frequency: string | null;
   biggest_challenge: string | null;
   onboarding_completed: boolean;
+  // Pregnancy-mode gating columns (added in 20260731120000_pregnancy_mode_foundation).
+  training_mode: "cycle" | "pregnancy" | "postpartum";
+  stage_anchor_date: string | null;
+  provider_cleared: boolean;
+  provider_cleared_at: string | null;
   created_at?: string;
   updated_at?: string;
 };

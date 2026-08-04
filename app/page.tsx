@@ -7,6 +7,9 @@ import PhaseFitLogo from "./components/PhaseFitLogo";
 import supabase from "./lib/supabase";
 import { normalizeDifficulty } from "./lib/difficulty";
 import { useOnboardingGuard } from "./lib/use-onboarding-guard";
+import { getUserProfile } from "./lib/user-profile";
+import { resolvePregnancyStage } from "@/lib/stages/resolvePregnancyStage";
+import { STAGE_BAND_LABELS } from "./lib/pregnancy-display";
 
 type WorkoutRow = {
   id: string;
@@ -113,6 +116,14 @@ export default function Home() {
   );
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  // Pregnancy-mode home block. Null in cycle mode — the cycle path is unchanged.
+  const [pregnancy, setPregnancy] = useState<{ week: number; band: string } | null>(
+    null
+  );
+  // Fail closed: the generate CTA renders ONLY when we positively confirm cycle
+  // mode. A failed/absent profile read leaves this false so the UI never invites
+  // a click that the server would 409. Confirmed by training_mode === 'cycle'.
+  const [canGenerate, setCanGenerate] = useState(false);
 
   const [showOutsideModal, setShowOutsideModal] = useState(false);
   const [outsideActivity, setOutsideActivity] = useState("");
@@ -121,11 +132,6 @@ export default function Home() {
   const [outsideCyclePhase, setOutsideCyclePhase] = useState<CyclePhaseValue | "">("");
   const [outsideNotes, setOutsideNotes] = useState("");
   const [savingOutside, setSavingOutside] = useState(false);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
-  };
 
   const resetOutsideForm = () => {
     setOutsideActivity("");
@@ -202,6 +208,18 @@ export default function Home() {
 
       setUserId(data.user.id);
 
+      const profile = await getUserProfile(data.user.id);
+      setCanGenerate(profile?.training_mode === "cycle");
+      if (profile?.training_mode === "pregnancy" && profile.stage_anchor_date) {
+        const stage = resolvePregnancyStage(profile.stage_anchor_date, new Date());
+        if (stage.ok) {
+          setPregnancy({
+            week: stage.gestationalWeek,
+            band: STAGE_BAND_LABELS[stage.stageKey],
+          });
+        }
+      }
+
       const [workoutsRes, outsideRes] = await Promise.all([
         supabase
           .from("workouts")
@@ -277,10 +295,10 @@ export default function Home() {
       <div className="px-5 pt-4 flex justify-end">
         <button
           type="button"
-          onClick={handleLogout}
+          onClick={() => router.push("/settings")}
           className="pf-btn-ghost"
         >
-          Logout
+          Settings
         </button>
       </div>
 
@@ -305,6 +323,16 @@ export default function Home() {
 
       <div className="pf-container px-5 space-y-7 sm:space-y-8">
 
+        {/* Pregnancy status — additive, pregnancy mode only. Proof of pipeline;
+            cycle mode never renders this. */}
+        {pregnancy ? (
+          <section className="pf-card p-5 sm:p-6" aria-label="Pregnancy status">
+            <p className="pf-section-eyebrow mb-2">Pregnancy</p>
+            <p className="pf-heading-section text-lg">Week {pregnancy.week}</p>
+            <p className="pf-body-secondary text-sm mt-1">{pregnancy.band}</p>
+          </section>
+        ) : null}
+
         {/* Today's recommendation */}
         <section
           className="pf-card-hero p-6 sm:p-8 -mt-2"
@@ -319,7 +347,16 @@ export default function Home() {
           </h2>
 
           <div className="mt-6 space-y-5">
-            {heroWorkout ? (
+            {!canGenerate ? (
+              /* Fail closed: only confirmed cycle mode shows the generate CTA.
+                 Pregnancy -> coming soon; anything unconfirmed -> a neutral
+                 message, never the generate button. */
+              <p className="text-pf-text-secondary text-[0.9375rem] leading-relaxed">
+                {pregnancy
+                  ? "Pregnancy workouts are coming soon — sessions tailored to your stage are on the way."
+                  : "We couldn't confirm your training mode just now. Refresh to try again."}
+              </p>
+            ) : heroWorkout ? (
               <>
                 <div className="space-y-3">
                   <p className="text-xl sm:text-2xl font-bold text-pf-text font-[family-name:var(--font-barlow-condensed)] uppercase tracking-wide leading-tight">

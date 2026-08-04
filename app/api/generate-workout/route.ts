@@ -156,6 +156,36 @@ export async function POST(req: Request) {
       );
     }
 
+    // STOPGAP (pregnancy mode): the gating layer that adapts generation to
+    // pregnancy stages ships next sprint. Until then, refuse to generate for
+    // any non-cycle mode — a cycle-phase workout with no stage caps and no
+    // vetted movement pool must never reach a pregnant user.
+    //
+    // FAIL CLOSED — affirmatively require proof of cycle mode. The test is "can
+    // I confirm she is on cycle", not "can I prove she is pregnant". A read
+    // error, a missing row, or any training_mode that is not the exact string
+    // 'cycle' all block. Absence of proof of safety is not proof of safety.
+    // Same posture as resolvePregnancyStage returning ok:false. Replaced by the
+    // real gating layer next sprint.
+    const { data: modeProfile, error: modeError } = await supabase
+      .from("user_profiles")
+      .select("training_mode")
+      .eq("user_id", user_id)
+      .maybeSingle();
+
+    if (modeError || modeProfile?.training_mode !== "cycle") {
+      if (modeError) {
+        console.error("[generate-workout] training_mode read failed", modeError);
+      }
+      return NextResponse.json(
+        {
+          error:
+            "Workout generation isn't available in pregnancy mode yet — coming soon.",
+        },
+        { status: 409 }
+      );
+    }
+
     const modality = getWorkoutModality(String(style));
     const notesAnalysis = analyzeUserNotes(notes ?? "");
 
