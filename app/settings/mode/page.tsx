@@ -25,20 +25,29 @@ const ANSWER_OPTIONS: Array<{ value: ScreeningAnswer; label: string }> = [
 
 const Q4_DETAIL_MAX = 500;
 
-// Step 1 — only 'pregnancy' is actionable tonight. 'cycle' is the default mode
-// (nothing to switch to) and 'postpartum' isn't built yet. Both are disabled so
-// there is no dead option that appears to work. Reverting pregnancy -> cycle is
-// a separate, out-of-scope flow.
-const MODE_OPTIONS: Array<{
+// Step 1 options depend on the account's CURRENT mode. From cycle, only
+// pregnancy is actionable ('cycle' is already active; postpartum isn't built).
+// From pregnancy, 'cycle' becomes the enabled revert-to-cycle path.
+function buildModeOptions(
+  currentMode: string | null,
+): Array<{
   value: "cycle" | "pregnancy" | "postpartum";
   label: string;
   hint: string;
   disabled: boolean;
-}> = [
-  { value: "cycle", label: "Cycle", hint: "Default — already on your home screen", disabled: true },
-  { value: "pregnancy", label: "Pregnant", hint: "Switch to pregnancy tracking", disabled: false },
-  { value: "postpartum", label: "Postpartum", hint: "Coming soon", disabled: true },
-];
+}> {
+  const onPregnancy = currentMode === "pregnancy";
+  return [
+    {
+      value: "cycle",
+      label: "Cycle",
+      hint: onPregnancy ? "Switch back to cycle tracking" : "Already on cycle mode",
+      disabled: !onPregnancy,
+    },
+    { value: "pregnancy", label: "Pregnant", hint: "Switch to pregnancy tracking", disabled: false },
+    { value: "postpartum", label: "Postpartum", hint: "Coming soon", disabled: true },
+  ];
+}
 
 // Helper text carries the plain-language examples that let someone answer
 // without knowing clinical terminology — Q1–Q3 need it, Q4 doesn't.
@@ -109,6 +118,11 @@ export default function ModeSwitchPage() {
   // Post-submit outcome view. Null until a successful submit.
   const [result, setResult] = useState<ScreeningResult | null>(null);
 
+  // The account's current mode, and the revert-to-cycle confirmation state.
+  const [currentMode, setCurrentMode] = useState<string | null>(null);
+  const [revertConfirm, setRevertConfirm] = useState(false);
+  const [reverting, setReverting] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     const init = async () => {
@@ -117,7 +131,15 @@ export default function ModeSwitchPage() {
         router.replace("/login");
         return;
       }
-      if (!cancelled) setChecking(false);
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("training_mode")
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+      if (!cancelled) {
+        setCurrentMode((profile?.training_mode as string) ?? null);
+        setChecking(false);
+      }
     };
     init();
     return () => {
@@ -138,7 +160,9 @@ export default function ModeSwitchPage() {
   const canContinue = useMemo(() => {
     switch (step) {
       case "mode":
-        return mode === "pregnancy";
+        // Pregnancy is always actionable; 'cycle' only as the revert path when
+        // already on pregnancy.
+        return mode === "pregnancy" || (mode === "cycle" && currentMode === "pregnancy");
       case "due":
         return dueDate !== "" && duePreview.ok;
       case "screening":
@@ -149,7 +173,7 @@ export default function ModeSwitchPage() {
       default:
         return false;
     }
-  }, [step, mode, dueDate, duePreview, answers, providerAdvice, disclaimerAck]);
+  }, [step, mode, currentMode, dueDate, duePreview, answers, providerAdvice, disclaimerAck]);
 
   const goBack = () => {
     setError(null);
@@ -205,9 +229,42 @@ export default function ModeSwitchPage() {
     }
   };
 
+  const doRevert = async () => {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) {
+      router.replace("/login");
+      return;
+    }
+    setReverting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/pregnancy/revert", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.error ?? "Could not switch back. Please try again.");
+        setReverting(false);
+        return;
+      }
+      router.replace("/");
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setReverting(false);
+    }
+  };
+
   const goNext = () => {
     if (!canContinue) return;
     setError(null);
+    // Revert path: choosing cycle (only enabled from pregnancy) goes to a single
+    // confirmation step, not the four-step pregnancy flow.
+    if (step === "mode" && mode === "cycle") {
+      setRevertConfirm(true);
+      return;
+    }
     if (!isLastStep) {
       setStepIndex((i) => i + 1);
       return;
@@ -219,6 +276,49 @@ export default function ModeSwitchPage() {
     return (
       <main className="pf-page flex items-center justify-center p-6">
         <p className="pf-body-muted">Loading...</p>
+      </main>
+    );
+  }
+
+  // Revert-to-cycle confirmation. Neutral copy — the app doesn't know why she's
+  // switching and shouldn't guess (no congratulation, no commiseration).
+  if (revertConfirm) {
+    return (
+      <main className="pf-page flex flex-col min-h-full p-6 pb-10">
+        <div className="w-full max-w-md mx-auto flex flex-col flex-1 space-y-5">
+          <div className="text-center pt-1">
+            <PhaseFitLogo variant="auth" className="flex justify-center" priority />
+          </div>
+          <div className="pf-card p-5 sm:p-6 space-y-4">
+            <p className="pf-section-eyebrow">Switch to cycle</p>
+            <p className="pf-body-secondary text-sm">
+              This will switch you back to cycle tracking and clear your pregnancy
+              details. You can switch back any time.
+            </p>
+            {error ? <p className="text-sm text-pf-coral">{error}</p> : null}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setRevertConfirm(false);
+                  setError(null);
+                }}
+                disabled={reverting}
+                className="pf-btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={doRevert}
+                disabled={reverting}
+                className="pf-btn-primary disabled:opacity-60"
+              >
+                {reverting ? "Switching…" : "Switch to cycle"}
+              </button>
+            </div>
+          </div>
+        </div>
       </main>
     );
   }
@@ -316,7 +416,7 @@ export default function ModeSwitchPage() {
                 Which clock should the app run on?
               </p>
               <div className="pf-radio-group pf-radio-group-single" role="radiogroup" aria-label="Training mode">
-                {MODE_OPTIONS.map((opt) => (
+                {buildModeOptions(currentMode).map((opt) => (
                   <label
                     key={opt.value}
                     className="pf-radio-option"
