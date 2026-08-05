@@ -39,6 +39,30 @@ export type StageKey =
   | 't3_early'
   | 't3_late';
 
+/**
+ * The six bands in chronological order. Structural (not clinical): it only
+ * encodes which band comes before which, used to test whether a movement's
+ * [min_stage, max_stage] range covers a given band.
+ */
+export const STAGE_ORDER: readonly StageKey[] = [
+  't1_early',
+  't1_late',
+  't2_golden',
+  't2_late',
+  't3_early',
+  't3_late',
+];
+
+/**
+ * Ordinal (0..5) of a stage key, or `null` if it is not one of the six literals.
+ * Callers MUST treat `null` as "cannot place" and fail closed — never coerce it
+ * to 0 or include a movement they can't position.
+ */
+export function stageOrdinal(key: string): number | null {
+  const i = STAGE_ORDER.indexOf(key as StageKey);
+  return i === -1 ? null : i;
+}
+
 /** Coaching energy descriptor for a band (non-clinical). */
 export type EnergyState = 'low' | 'building' | 'stable' | 'deload';
 

@@ -8,42 +8,176 @@ import supabase from "../lib/supabase";
 import { useOnboardingGuard } from "../lib/use-onboarding-guard";
 import { getUserProfile } from "../lib/user-profile";
 
+const EQUIPMENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "chair", label: "Chair" },
+  { value: "wall", label: "Wall" },
+  { value: "band", label: "Resistance band" },
+  { value: "dumbbell", label: "Dumbbell" },
+  { value: "bench", label: "Bench" },
+];
+
+/** Bearer token for the API. The route derives the user from it, not the body. */
+async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 export default function GenerateWorkoutClient() {
   const router = useRouter();
   const onboardingReady = useOnboardingGuard();
 
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  // Stopgap (see /api/generate-workout): fail closed. `mode` is null until the
-  // profile read resolves; only a confirmed 'cycle' shows the form. `checking`
-  // keeps the form from flashing before we know the mode.
+  // Fail closed: `mode` is null until the profile read resolves; `checking`
+  // keeps any form from flashing before we know the mode + screening state.
   const [mode, setMode] = useState<string | null>(null);
+  const [screening, setScreening] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
+  // Cycle inputs.
   const [phase, setPhase] = useState("");
   const [energy, setEnergy] = useState("");
   const [time, setTime] = useState("");
   const [workoutStyle, setWorkoutStyle] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Pregnancy inputs (simplified form): session length + equipment on hand.
+  const [equipment, setEquipment] = useState<string[]>([]);
+
   useEffect(() => {
     if (!onboardingReady) return;
 
-    const getUser = async () => {
+    const init = async () => {
       const { data } = await supabase.auth.getUser();
-
       if (!data.user) {
         router.push("/login");
         return;
       }
       setUser(data.user);
       const profile = await getUserProfile(data.user.id);
-      setMode(profile?.training_mode ?? null);
+      const trainingMode = profile?.training_mode ?? null;
+      setMode(trainingMode);
+
+      if (trainingMode === "pregnancy") {
+        // Own screening rows are readable via RLS ("Users read own screening").
+        const { data: row } = await supabase
+          .from("pregnancy_screening")
+          .select("screening_result")
+          .eq("user_id", data.user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setScreening((row?.screening_result as string) ?? null);
+      }
       setChecking(false);
     };
 
-    getUser();
+    init();
   }, [router, onboardingReady]);
+
+  const toggleEquipment = (value: string) => {
+    setEquipment((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
+
+  const generateCycle = async () => {
+    if (!phase || !energy || !time || !workoutStyle) {
+      alert("Please complete all fields");
+      return;
+    }
+    setLoading(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+      const res = await fetch("/api/generate-workout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ phase, energy, time, style: workoutStyle, notes }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert("Failed to generate workout");
+        setLoading(false);
+        return;
+      }
+      router.push(`/workout/${data.id}`);
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong");
+      setLoading(false);
+    }
+  };
+
+  const generatePregnancy = async () => {
+    if (!time) {
+      alert("Select a session length");
+      return;
+    }
+    setLoading(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+      const res = await fetch("/api/generate-workout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ time, equipment }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data?.error ?? "Failed to generate workout");
+        setLoading(false);
+        return;
+      }
+      router.push(`/workout/${data.id}`);
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong");
+      setLoading(false);
+    }
+  };
+
+  const loadingOverlay = loading ? (
+    <div
+      className="pf-generate-loading"
+      role="status"
+      aria-live="polite"
+      aria-label="Generating workout"
+    >
+      <div className="pf-card pf-generate-loading-card">
+        <div className="pf-loading-spinner" aria-hidden />
+        <p className="pf-heading-section text-base mb-2">Building your session</p>
+        <p className="pf-body-muted text-sm">Assembling your session…</p>
+      </div>
+    </div>
+  ) : null;
+
+  const stateCard = (eyebrow: string, heading: string, body: string) => (
+    <section className="pf-card-hero p-6 sm:p-8 text-center space-y-3">
+      <p className="pf-section-eyebrow">{eyebrow}</p>
+      <h2 className="pf-heading-section">{heading}</h2>
+      <p className="pf-body-secondary text-sm">{body}</p>
+      <button
+        type="button"
+        onClick={() => router.push("/")}
+        className="pf-btn-secondary"
+      >
+        Back to home
+      </button>
+    </section>
+  );
 
   if (!onboardingReady || !user || checking) {
     return (
@@ -53,78 +187,105 @@ export default function GenerateWorkoutClient() {
     );
   }
 
-  // Fail closed: only a confirmed 'cycle' mode may generate. Pregnancy shows the
-  // coming-soon message; any unconfirmed/other mode shows a neutral one — never
-  // the form.
-  if (mode !== "cycle") {
+  // ---- Pregnancy branch (separate from cycle; selected by training_mode) ----
+  if (mode === "pregnancy") {
+    if (screening === "hard_stop") {
+      return stateCard(
+        "Pregnancy",
+        "Let's pause on workouts",
+        "Based on your screening, please work with your provider before training here.",
+      );
+    }
+    if (screening === "provider_conversation") {
+      return stateCard(
+        "Pregnancy",
+        "A quick check first",
+        "We're waiting on your provider conversation before suggesting workouts. Once you're cleared, come back and we'll build your session.",
+      );
+    }
+    if (screening !== "clear") {
+      return stateCard(
+        "Pregnancy",
+        "Finish your screening",
+        "Complete the pregnancy screening in Settings before generating a workout.",
+      );
+    }
+
+    // screening === 'clear' -> simplified pregnancy form.
     return (
-      <section className="pf-card-hero p-6 sm:p-8 text-center space-y-3">
-        <p className="pf-section-eyebrow">
-          {mode === "pregnancy" ? "Pregnancy" : "Unavailable"}
-        </p>
-        <h2 className="pf-heading-section">
-          {mode === "pregnancy"
-            ? "Pregnancy workouts are coming soon"
-            : "Workout generation is unavailable"}
-        </h2>
-        <p className="pf-body-secondary text-sm">
-          {mode === "pregnancy"
-            ? "We're building sessions tailored to your stage. Generation is paused for pregnancy mode."
-            : "We couldn't confirm your training mode just now. Head back and try again."}
-        </p>
+      <>
+        <section className="pf-card-hero p-6 sm:p-8" aria-labelledby="preg-config-heading">
+          <p className="pf-section-eyebrow mb-2">Pregnancy session</p>
+          <h2 id="preg-config-heading" className="pf-heading-section">
+            Session Details
+          </h2>
+
+          <div className="mt-6">
+            <div className="pf-form-section">
+              <h3 className="pf-form-section-title">Available Time</h3>
+              <p className="pf-form-section-hint">How long can you train right now?</p>
+              <label className="pf-label sr-only" htmlFor="preg-time">Duration</label>
+              <select
+                id="preg-time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="pf-select"
+              >
+                <option value="">Select duration</option>
+                <option value="20">20 min</option>
+                <option value="40">40 min</option>
+                <option value="60">60 min</option>
+              </select>
+            </div>
+
+            <div className="pf-form-divider" />
+
+            <div className="pf-form-section">
+              <h3 className="pf-form-section-title">Equipment available</h3>
+              <p className="pf-form-section-hint">
+                Bodyweight movements are always included. Select anything else you have.
+              </p>
+              <div className="pf-radio-group" role="group" aria-label="Equipment available">
+                {EQUIPMENT_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="pf-radio-option">
+                    <input
+                      type="checkbox"
+                      checked={equipment.includes(opt.value)}
+                      onChange={() => toggleEquipment(opt.value)}
+                      className="pf-radio-input"
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
         <button
           type="button"
-          onClick={() => router.push("/")}
-          className="pf-btn-secondary"
+          onClick={generatePregnancy}
+          disabled={loading}
+          className="pf-btn-primary pf-btn-primary-prominent disabled:opacity-60"
         >
-          Back to home
+          {loading ? "Generating…" : "Generate Workout"}
         </button>
-      </section>
+
+        {loadingOverlay}
+      </>
     );
   }
 
-  const generateWorkout = async () => {
-    if (!user) return;
+  // Fail closed: anything not positively confirmed 'cycle' shows no form.
+  if (mode !== "cycle") {
+    return stateCard(
+      "Unavailable",
+      "Workout generation is unavailable",
+      "We couldn't confirm your training mode just now. Head back and try again.",
+    );
+  }
 
-    if (!phase || !energy || !time || !workoutStyle) {
-      alert("Please complete all fields");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/generate-workout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: user.id,
-          phase,
-          energy,
-          time,
-          style: workoutStyle,
-          notes,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        alert("Failed to generate workout");
-        setLoading(false);
-        return;
-      }
-
-      router.push(`/workout/${data.id}`);
-    } catch (err) {
-      console.error(err);
-      alert("Something went wrong");
-      setLoading(false);
-    }
-  };
-
+  // ---- Cycle branch (unchanged form; now sends a Bearer token) ----
   return (
     <>
       <section
@@ -255,31 +416,14 @@ export default function GenerateWorkoutClient() {
 
       <button
         type="button"
-        onClick={generateWorkout}
+        onClick={generateCycle}
         disabled={loading}
         className="pf-btn-primary pf-btn-primary-prominent disabled:opacity-60"
       >
         {loading ? "Generating…" : "Generate Workout"}
       </button>
 
-      {loading ? (
-        <div
-          className="pf-generate-loading"
-          role="status"
-          aria-live="polite"
-          aria-label="Generating workout"
-        >
-          <div className="pf-card pf-generate-loading-card">
-            <div className="pf-loading-spinner" aria-hidden />
-            <p className="pf-heading-section text-base mb-2">
-              Building your session
-            </p>
-            <p className="pf-body-muted text-sm">
-              Adapting to your cycle, energy, and goals…
-            </p>
-          </div>
-        </div>
-      ) : null}
+      {loadingOverlay}
     </>
   );
 }

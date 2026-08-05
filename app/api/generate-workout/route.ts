@@ -15,6 +15,17 @@ import {
   parseWorkoutJson,
 } from "../../lib/workout-prompts";
 import { buildGenerationParams } from "../../lib/generation-params";
+import { resolvePregnancyStage } from "@/lib/stages/resolvePregnancyStage";
+import { filterMovementsByStage, filterByEquipment } from "@/lib/movements/filterByStage";
+import type { Movement } from "@/lib/movements/types";
+import {
+  buildPregnancySystemPrompt,
+  buildPregnancyUserMessage,
+  validatePregnancyWorkout,
+  buildCannedSession,
+  resolveStructure,
+  type PregnancyStructureItem,
+} from "../../lib/pregnancy-prompts";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -24,6 +35,14 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+/** Anon client used only to verify a bearer token and resolve its user. */
+function authClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 function normalizeMovement(name: string) {
   const n = name.toLowerCase();
@@ -146,43 +165,72 @@ function buildPerformanceSummary(
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { user_id, phase, energy, time, style, notes } = body;
+    // 0. Verify JWT. The user id comes from the verified token, NEVER the body.
+    //    This route now reads pregnancy safety state (training_mode, screening
+    //    verdict, stage anchor) keyed off the id, so a body-supplied id would
+    //    let anyone generate against anyone's pregnancy state. Applies to both
+    //    the cycle and pregnancy branches.
+    const authHeader = req.headers.get("authorization") ?? "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!token) {
+      return NextResponse.json({ error: "Missing bearer token" }, { status: 401 });
+    }
+    const { data: userData, error: authError } = await authClient().auth.getUser(token);
+    if (authError || !userData?.user) {
+      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+    }
+    const user_id = userData.user.id;
 
-    if (!user_id || !phase || !energy || !time || !style) {
+    const body = await req.json();
+    const { phase, energy, time, style, notes, equipment } = body;
+
+    // Both branches need a session length.
+    if (!time) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Missing required field: time" },
         { status: 400 }
       );
     }
 
-    // STOPGAP (pregnancy mode): the gating layer that adapts generation to
-    // pregnancy stages ships next sprint. Until then, refuse to generate for
-    // any non-cycle mode — a cycle-phase workout with no stage caps and no
-    // vetted movement pool must never reach a pregnant user.
-    //
-    // FAIL CLOSED — affirmatively require proof of cycle mode. The test is "can
-    // I confirm she is on cycle", not "can I prove she is pregnant". A read
-    // error, a missing row, or any training_mode that is not the exact string
-    // 'cycle' all block. Absence of proof of safety is not proof of safety.
-    // Same posture as resolvePregnancyStage returning ok:false. Replaced by the
-    // real gating layer next sprint.
+    // Read the gating mode + anchor for the VERIFIED user. Fail closed: a read
+    // error, a missing row, or any training_mode other than cycle|pregnancy all
+    // block. Absence of proof of safety is not proof of safety.
     const { data: modeProfile, error: modeError } = await supabase
       .from("user_profiles")
-      .select("training_mode")
+      .select("training_mode, stage_anchor_date")
       .eq("user_id", user_id)
       .maybeSingle();
 
-    if (modeError || modeProfile?.training_mode !== "cycle") {
+    if (
+      modeError ||
+      !modeProfile ||
+      (modeProfile.training_mode !== "cycle" &&
+        modeProfile.training_mode !== "pregnancy")
+    ) {
       if (modeError) {
-        console.error("[generate-workout] training_mode read failed", modeError);
+        console.error("[generate-workout] profile read failed", modeError);
       }
       return NextResponse.json(
-        {
-          error:
-            "Workout generation isn't available in pregnancy mode yet — coming soon.",
-        },
+        { error: "Workout generation is unavailable for this account state." },
         { status: 409 }
+      );
+    }
+
+    // Pregnancy: real gating + generation constrained to the vetted pool.
+    if (modeProfile.training_mode === "pregnancy") {
+      return await handlePregnancyGeneration({
+        user_id,
+        time,
+        equipment,
+        stageAnchorDate: modeProfile.stage_anchor_date,
+      });
+    }
+
+    // ---- Cycle path (unchanged below) ----
+    if (!phase || !energy || !style) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
       );
     }
 
@@ -339,4 +387,204 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Pregnancy generation. Deterministic gating decides WHETHER to generate; the
+ * model only selects/sequences from a stage- and equipment-filtered pool it
+ * cannot add to, and every returned slug is validated against that pool. Any
+ * gate that can't be positively confirmed fails closed (409). See the sprint
+ * plan for the KNOWN GAP: no red-flag/daily-checkin gate yet.
+ */
+async function handlePregnancyGeneration(opts: {
+  user_id: string;
+  time: unknown;
+  equipment: unknown;
+  stageAnchorDate: string | null;
+}): Promise<Response> {
+  const { user_id, stageAnchorDate } = opts;
+
+  const duration = Number(opts.time);
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return NextResponse.json({ error: "Invalid session length" }, { status: 400 });
+  }
+  const equipmentList = Array.isArray(opts.equipment)
+    ? opts.equipment.map((e) => String(e))
+    : [];
+
+  // 1. Most recent screening row. No row -> cannot proceed.
+  const { data: screening } = await supabase
+    .from("pregnancy_screening")
+    .select("screening_result")
+    .eq("user_id", user_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!screening) {
+    return NextResponse.json(
+      { error: "Complete pregnancy screening before generating a workout." },
+      { status: 409 }
+    );
+  }
+
+  // 2. Gate on the verdict. provider_conversation blocks: allowedCategories is
+  //    still [] / TODO(clinical), so blocking is the fail-closed choice until
+  //    the conservative subset is vetted — do NOT invent one.
+  const result = screening.screening_result;
+  if (result === "hard_stop") {
+    return NextResponse.json(
+      {
+        error:
+          "Based on your screening, please work with your provider before training here.",
+        screening_result: "hard_stop",
+      },
+      { status: 409 }
+    );
+  }
+  if (result === "provider_conversation") {
+    return NextResponse.json(
+      {
+        error:
+          "We're waiting on your provider conversation before suggesting workouts.",
+        screening_result: "provider_conversation",
+      },
+      { status: 409 }
+    );
+  }
+  if (result !== "clear") {
+    return NextResponse.json(
+      { error: "Workout generation is unavailable." },
+      { status: 409 }
+    );
+  }
+
+  // 3. Resolve the current stage band from the anchor date.
+  const stage = resolvePregnancyStage(stageAnchorDate, new Date());
+  if (!stage.ok) {
+    return NextResponse.json(
+      { error: "Your due date could not be resolved to a valid stage.", reason: stage.reason },
+      { status: 409 }
+    );
+  }
+
+  // 4. Build the candidate pool: stage band, then equipment on hand.
+  const { data: allMovements, error: movError } = await supabase
+    .from("movements")
+    .select("*");
+  if (movError) {
+    console.error("[generate-workout] movements read failed", movError);
+    return NextResponse.json({ error: "Could not load movements" }, { status: 500 });
+  }
+  const byStage = filterMovementsByStage((allMovements ?? []) as Movement[], stage.stageKey);
+  const pool = filterByEquipment(byStage, equipmentList);
+  if (pool.length === 0) {
+    return NextResponse.json(
+      { error: "No stage-appropriate movements match the selected equipment." },
+      { status: 409 }
+    );
+  }
+
+  const poolSlugs = new Set(pool.map((m) => m.slug));
+  const poolBySlug = new Map(pool.map((m) => [m.slug, m]));
+
+  // 5. Constrained generation with one retry, then a deterministic fallback.
+  const systemPrompt = buildPregnancySystemPrompt();
+  const userMessage = buildPregnancyUserMessage(pool, {
+    stageKey: stage.stageKey,
+    gestationalWeek: stage.gestationalWeek,
+    time: duration,
+  });
+
+  let structure: PregnancyStructureItem[] | null = null;
+  let source: "model" | "fallback" = "model";
+  let focus = "Gentle pregnancy session";
+  let intensity = "Easy, breath-led";
+  let why = "A safe, gentle session for your current stage.";
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+    });
+    const text = completion.choices[0]?.message?.content || "";
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = parseWorkoutJson(text);
+    } catch {
+      continue;
+    }
+    // 6. Validate: every slug must be in the pool. Fail closed otherwise.
+    if (!validatePregnancyWorkout(parsed, poolSlugs).valid) {
+      continue;
+    }
+    structure = resolveStructure(parsed, poolBySlug);
+    if (structure.length === 0) {
+      structure = null;
+      continue;
+    }
+    if (typeof parsed.focus === "string") focus = parsed.focus;
+    if (typeof parsed.intensity === "string") intensity = parsed.intensity;
+    if (typeof parsed.why === "string") why = parsed.why;
+    break;
+  }
+
+  // Second violation -> deterministic safe session from the pool. Log it.
+  if (!structure || structure.length === 0) {
+    const canned = buildCannedSession(pool, { time: duration });
+    structure = canned.structure;
+    focus = canned.focus;
+    intensity = canned.intensity;
+    why = canned.why;
+    source = "fallback";
+    await supabase.from("events").insert({
+      user_id,
+      event_name: "pregnancy_workout_fallback",
+      metadata: { stage_key: stage.stageKey, gestational_week: stage.gestationalWeek },
+    });
+  }
+
+  // 7. Persist. Canonical names already come from the pool (model can't rename).
+  const insertPayload = {
+    user_id,
+    phase: "pregnancy",
+    workout: focus,
+    intensity,
+    movements: structure.map((s) => s.movement),
+    structure,
+    flow: [],
+    why,
+    generation_params: {
+      mode: "pregnancy",
+      duration,
+      stage_key: stage.stageKey,
+      gestational_week: stage.gestationalWeek,
+      equipment: equipmentList,
+      pool_slugs: [...poolSlugs],
+      source,
+    },
+  };
+
+  const { data, error } = await supabase
+    .from("workouts")
+    .insert([insertPayload])
+    .select()
+    .single();
+
+  if (error) {
+    console.error("[generate-workout] pregnancy insert failed", error);
+    return NextResponse.json({ error: "Database insert failed" }, { status: 500 });
+  }
+
+  const { error: eventError } = await supabase.from("events").insert({
+    user_id,
+    event_name: "workout_generated",
+    metadata: { mode: "pregnancy", stage_key: stage.stageKey, source },
+  });
+  if (eventError) console.error("[logEvent] workout_generated", eventError);
+
+  return NextResponse.json({ id: data.id });
 }

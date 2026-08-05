@@ -120,10 +120,13 @@ export default function Home() {
   const [pregnancy, setPregnancy] = useState<{ week: number; band: string } | null>(
     null
   );
-  // Fail closed: the generate CTA renders ONLY when we positively confirm cycle
-  // mode. A failed/absent profile read leaves this false so the UI never invites
-  // a click that the server would 409. Confirmed by training_mode === 'cycle'.
+  // Fail closed: the generate CTA renders ONLY when we positively confirm a
+  // generatable state (cycle, or pregnancy with a 'clear' screening). A failed
+  // or ambiguous read leaves this false so the UI never invites a click the
+  // server would 409.
   const [canGenerate, setCanGenerate] = useState(false);
+  const [trainingMode, setTrainingMode] = useState<string | null>(null);
+  const [pregnancyScreening, setPregnancyScreening] = useState<string | null>(null);
 
   const [showOutsideModal, setShowOutsideModal] = useState(false);
   const [outsideActivity, setOutsideActivity] = useState("");
@@ -209,15 +212,32 @@ export default function Home() {
       setUserId(data.user.id);
 
       const profile = await getUserProfile(data.user.id);
-      setCanGenerate(profile?.training_mode === "cycle");
-      if (profile?.training_mode === "pregnancy" && profile.stage_anchor_date) {
-        const stage = resolvePregnancyStage(profile.stage_anchor_date, new Date());
-        if (stage.ok) {
-          setPregnancy({
-            week: stage.gestationalWeek,
-            band: STAGE_BAND_LABELS[stage.stageKey],
-          });
+      const mode = profile?.training_mode ?? null;
+      setTrainingMode(mode);
+
+      if (mode === "cycle") {
+        setCanGenerate(true);
+      } else if (mode === "pregnancy") {
+        if (profile?.stage_anchor_date) {
+          const stage = resolvePregnancyStage(profile.stage_anchor_date, new Date());
+          if (stage.ok) {
+            setPregnancy({
+              week: stage.gestationalWeek,
+              band: STAGE_BAND_LABELS[stage.stageKey],
+            });
+          }
         }
+        // Own screening rows are readable via RLS.
+        const { data: row } = await supabase
+          .from("pregnancy_screening")
+          .select("screening_result")
+          .eq("user_id", data.user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const result = (row?.screening_result as string) ?? null;
+        setPregnancyScreening(result);
+        setCanGenerate(result === "clear");
       }
 
       const [workoutsRes, outsideRes] = await Promise.all([
@@ -348,12 +368,16 @@ export default function Home() {
 
           <div className="mt-6 space-y-5">
             {!canGenerate ? (
-              /* Fail closed: only confirmed cycle mode shows the generate CTA.
-                 Pregnancy -> coming soon; anything unconfirmed -> a neutral
-                 message, never the generate button. */
+              /* Fail closed: the generate CTA shows only for a confirmed
+                 generatable state. Pregnancy gets screening-specific copy;
+                 anything unconfirmed -> a neutral message. Never the button. */
               <p className="text-pf-text-secondary text-[0.9375rem] leading-relaxed">
-                {pregnancy
-                  ? "Pregnancy workouts are coming soon — sessions tailored to your stage are on the way."
+                {trainingMode === "pregnancy"
+                  ? pregnancyScreening === "hard_stop"
+                    ? "Based on your screening, please work with your provider before training here."
+                    : pregnancyScreening === "provider_conversation"
+                      ? "We're waiting on your provider conversation before suggesting workouts."
+                      : "Finish your pregnancy screening in Settings to start."
                   : "We couldn't confirm your training mode just now. Refresh to try again."}
               </p>
             ) : heroWorkout ? (
