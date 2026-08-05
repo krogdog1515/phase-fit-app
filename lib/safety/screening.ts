@@ -14,7 +14,8 @@ import type { MovementCategory } from '../stages/pregnancyStages';
  * `hard_stop`, never `clear`. A malformed screen must never read as safe.
  *
  * NOTE: the question wording for q1..q4 is authored separately (the CSEP
- * instrument is copyrighted). This module only knows them as four booleans.
+ * instrument is copyrighted). This module only knows them as four tri-state
+ * answers ('yes' | 'no' | 'unsure'); 'unsure' is treated identically to 'yes'.
  */
 
 /** Provider consultation status supplied by the user. */

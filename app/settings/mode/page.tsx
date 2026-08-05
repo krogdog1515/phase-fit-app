@@ -68,7 +68,11 @@ const SCREENING_QUESTIONS: Array<{ key: AnswerKey; text: string; helper?: string
 
 const PROVIDER_ADVICE_OPTIONS: Array<{ value: ProviderAdvice; label: string }> = [
   { value: "not_consulted", label: "I haven't talked to my provider yet" },
-  { value: "cleared", label: "My provider cleared me to exercise" },
+  {
+    value: "cleared",
+    label:
+      "I've told my provider about anything I flagged above, and they cleared me for exercise.",
+  },
   { value: "restricted", label: "My provider gave me restrictions" },
   { value: "advised_against", label: "My provider advised against exercise" },
 ];
