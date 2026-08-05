@@ -15,3 +15,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
   **APPLIED TO PRODUCTION. Never edit it.** The same rule holds for any
   already-applied migration — all future schema changes go in new migration
   files.
+
+# Local dev
+
+- After changing client-side types or form values, run `rm -rf .next` before
+  manual testing. Stale Next.js dev bundles serve old client JS and produce
+  wrong-shape payloads that look like source bugs.
