@@ -65,6 +65,15 @@ export async function POST(req: Request) {
   // acknowledgment, stored for the record.
   const disclaimerAcknowledged = body.disclaimerAcknowledged === true;
 
+  // Prior activity level. Only the four enum values pass through; anything else
+  // (including missing) is stored as null. The RPC + column CHECK also guard it.
+  const ACTIVITY_LEVELS = ["sedentary", "light", "active", "athlete"];
+  const priorActivityLevel =
+    typeof body.priorActivityLevel === "string" &&
+    ACTIVITY_LEVELS.includes(body.priorActivityLevel)
+      ? body.priorActivityLevel
+      : null;
+
   // Tri-state answers, passed straight to resolveScreeningResult which validates
   // the literals and fails closed on anything unexpected.
   const q1 = body.q1 as ScreeningAnswer;
@@ -124,6 +133,7 @@ export async function POST(req: Request) {
     p_stage_anchor_date: dueDate,
     p_provider_cleared: providerCleared,
     p_provider_cleared_at: providerClearedAt,
+    p_prior_activity_level: priorActivityLevel,
   });
 
   if (rpcError) {

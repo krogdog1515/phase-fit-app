@@ -4,7 +4,7 @@
  *   npx tsx scripts/generate-movement-seed.ts
  *
  * Reads  supabase/seed/movements_t1.csv
- * Writes supabase/seed/20260805_movements_t1.sql
+ * Writes supabase/seed/20260806_movements_t1_v2.sql
  *
  * Emits only vetted ('Y') rows, normalizes the three array columns
  * (comma-separated -> text[], 'none'/empty -> '{}'), maps the media_url
@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const CSV_PATH = join(ROOT, 'supabase/seed/movements_t1.csv');
-const OUT_PATH = join(ROOT, 'supabase/seed/20260805_movements_t1.sql');
+const OUT_PATH = join(ROOT, 'supabase/seed/20260806_movements_t1_v2.sql');
 
 const MEDIA_PLACEHOLDER = 'TODO - curated link only';
 

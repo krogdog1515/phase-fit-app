@@ -8,13 +8,19 @@ import supabase from "../lib/supabase";
 import { useOnboardingGuard } from "../lib/use-onboarding-guard";
 import { getUserProfile } from "../lib/user-profile";
 
-const EQUIPMENT_OPTIONS: Array<{ value: string; label: string }> = [
+// Grouped so chair/wall aren't an easy accidental omission — unchecking them
+// silently removes real movements (e.g. the only squat depends on a chair).
+const COMMON_EQUIPMENT: Array<{ value: string; label: string }> = [
   { value: "chair", label: "Chair" },
   { value: "wall", label: "Wall" },
+];
+const OPTIONAL_EQUIPMENT: Array<{ value: string; label: string }> = [
   { value: "band", label: "Resistance band" },
   { value: "dumbbell", label: "Dumbbell" },
   { value: "bench", label: "Bench" },
 ];
+// Chair + wall default to checked — nearly everyone has them.
+const DEFAULT_EQUIPMENT = ["chair", "wall"];
 
 /** Bearer token for the API. The route derives the user from it, not the body. */
 async function getAccessToken(): Promise<string | null> {
@@ -42,7 +48,7 @@ export default function GenerateWorkoutClient() {
   const [notes, setNotes] = useState("");
 
   // Pregnancy inputs (simplified form): session length + equipment on hand.
-  const [equipment, setEquipment] = useState<string[]>([]);
+  const [equipment, setEquipment] = useState<string[]>(DEFAULT_EQUIPMENT);
 
   useEffect(() => {
     if (!onboardingReady) return;
@@ -243,10 +249,27 @@ export default function GenerateWorkoutClient() {
             <div className="pf-form-section">
               <h3 className="pf-form-section-title">Equipment available</h3>
               <p className="pf-form-section-hint">
-                Bodyweight movements are always included. Select anything else you have.
+                Bodyweight movements are always included. Uncheck anything you don&apos;t have.
               </p>
-              <div className="pf-radio-group" role="group" aria-label="Equipment available">
-                {EQUIPMENT_OPTIONS.map((opt) => (
+
+              <p className="pf-label mt-1 mb-1">Almost everyone has these</p>
+              <div className="pf-radio-group" role="group" aria-label="Common equipment">
+                {COMMON_EQUIPMENT.map((opt) => (
+                  <label key={opt.value} className="pf-radio-option">
+                    <input
+                      type="checkbox"
+                      checked={equipment.includes(opt.value)}
+                      onChange={() => toggleEquipment(opt.value)}
+                      className="pf-radio-input"
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+
+              <p className="pf-label mt-3 mb-1">Optional</p>
+              <div className="pf-radio-group" role="group" aria-label="Optional equipment">
+                {OPTIONAL_EQUIPMENT.map((opt) => (
                   <label key={opt.value} className="pf-radio-option">
                     <input
                       type="checkbox"

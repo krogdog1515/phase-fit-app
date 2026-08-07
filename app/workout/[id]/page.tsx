@@ -36,6 +36,9 @@ type MovementState = {
   note: string;
   logs: SetLog[];
   notes: string;
+  // Pregnancy-only prescription fields (0 / "" for cycle workouts).
+  durationSeconds: number;
+  intensity: string;
 };
 
 type FlowBlock = {
@@ -72,6 +75,25 @@ type WorkoutLogRow = {
   set_number: number | null;
   created_at?: string | null;
 };
+
+/** Human duration from seconds: "5 min", "45s". Empty for non-positive. */
+function formatDuration(seconds: number): string {
+  if (seconds <= 0) return "";
+  if (seconds >= 60) return `${Math.round(seconds / 60)} min`;
+  return `${seconds}s`;
+}
+
+/** Pregnancy target line: sets×reps or duration, plus the intensity cue. */
+function pregnancyTargetLine(item: MovementState): string {
+  const target =
+    item.sets > 0
+      ? `${item.sets} × ${item.reps || "as able"}`
+      : formatDuration(item.durationSeconds);
+  const parts: string[] = [];
+  if (target) parts.push(`Target: ${target}`);
+  if (item.intensity) parts.push(item.intensity);
+  return parts.join(" • ");
+}
 
 /** Keep latest row per movement slot + set when users save more than once. */
 function dedupeLogsByLatest(logs: WorkoutLogRow[]): WorkoutLogRow[] {
@@ -185,6 +207,10 @@ export default function WorkoutPage() {
   const [regenerating, setRegenerating] = useState(false);
 
   const generationParams = parseGenerationParams(workout?.generation_params);
+  // Pregnancy workouts are bodyweight/time-based — no weight to log, so the
+  // finish flow and movement cards branch on this. phase is set to 'pregnancy'
+  // at generation time.
+  const isPregnancy = workout?.phase === "pregnancy";
 
   useEffect(() => {
     if (!onboardingReady) return;
@@ -247,6 +273,8 @@ export default function WorkoutPage() {
                 }) satisfies SetLog
             ),
             notes: "",
+            durationSeconds: Number(item.durationSeconds) || 0,
+            intensity: String(item.intensity ?? ""),
           }));
 
           const logs = logsRaw as WorkoutLogRow[];
@@ -395,11 +423,15 @@ export default function WorkoutPage() {
       }
     }
 
+    // Sessions with nothing to log: time-based flow sessions, and pregnancy
+    // sessions (bodyweight / time-based, no weight to record). Do NOT weaken the
+    // cycle strength path — it still requires a logged set below.
     const isFlowSession =
       flowBlocks.length > 0 && movements.length === 0;
+    const allowNoLogs = isFlowSession || isPregnancy;
 
     const logsToInsert = buildLogRows();
-    if (logsToInsert.length === 0 && !isFlowSession) {
+    if (logsToInsert.length === 0 && !allowNoLogs) {
       alert(
         "Log at least one set with weight and reps so future workouts can progress."
       );
@@ -621,7 +653,16 @@ export default function WorkoutPage() {
                 className="pf-input !mt-0 font-semibold"
               />
 
-              {showProgression ? (
+              {isPregnancy ? (
+                <>
+                  <p className="text-sm text-pf-text-muted">
+                    {pregnancyTargetLine(item)}
+                  </p>
+                  {item.note ? (
+                    <p className="text-sm text-pf-coral">{item.note}</p>
+                  ) : null}
+                </>
+              ) : showProgression ? (
                 <MovementProgressionBlock
                   sets={item.sets}
                   reps={item.reps}
@@ -640,35 +681,38 @@ export default function WorkoutPage() {
                 </>
               )}
 
-              <div className="space-y-2">
-                {item.logs.map((set, idx) => (
-                  <div key={idx} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                    <span className="text-xs text-pf-text-muted w-14 shrink-0">
-                      Set {idx + 1}
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="Weight"
-                      value={set.weight}
-                      onChange={(e) =>
-                        updateSet(i, idx, "weight", e.target.value)
-                      }
-                      className="pf-input !mt-0 !py-2"
-                    />
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="Reps"
-                      value={set.reps}
-                      onChange={(e) =>
-                        updateSet(i, idx, "reps", e.target.value)
-                      }
-                      className="pf-input !mt-0 !py-2"
-                    />
-                  </div>
-                ))}
-              </div>
+              {/* Cycle strength logging — pregnancy movements have no weight. */}
+              {!isPregnancy ? (
+                <div className="space-y-2">
+                  {item.logs.map((set, idx) => (
+                    <div key={idx} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                      <span className="text-xs text-pf-text-muted w-14 shrink-0">
+                        Set {idx + 1}
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Weight"
+                        value={set.weight}
+                        onChange={(e) =>
+                          updateSet(i, idx, "weight", e.target.value)
+                        }
+                        className="pf-input !mt-0 !py-2"
+                      />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Reps"
+                        value={set.reps}
+                        onChange={(e) =>
+                          updateSet(i, idx, "reps", e.target.value)
+                        }
+                        className="pf-input !mt-0 !py-2"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               <textarea
                 placeholder="Notes (optional)"

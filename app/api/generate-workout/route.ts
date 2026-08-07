@@ -415,7 +415,7 @@ async function handlePregnancyGeneration(opts: {
   // 1. Most recent screening row. No row -> cannot proceed.
   const { data: screening } = await supabase
     .from("pregnancy_screening")
-    .select("screening_result")
+    .select("screening_result, prior_activity_level")
     .eq("user_id", user_id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -494,6 +494,7 @@ async function handlePregnancyGeneration(opts: {
     stageKey: stage.stageKey,
     gestationalWeek: stage.gestationalWeek,
     time: duration,
+    priorActivityLevel: (screening.prior_activity_level as string | null) ?? null,
   });
 
   let structure: PregnancyStructureItem[] | null = null;
@@ -534,7 +535,15 @@ async function handlePregnancyGeneration(opts: {
 
   // Second violation -> deterministic safe session from the pool. Log it.
   if (!structure || structure.length === 0) {
-    const canned = buildCannedSession(pool, { time: duration });
+    const canned = buildCannedSession(pool, {
+      time: duration,
+      context: {
+        stageKey: stage.stageKey,
+        gestationalWeek: stage.gestationalWeek,
+        time: duration,
+        priorActivityLevel: (screening.prior_activity_level as string | null) ?? null,
+      },
+    });
     structure = canned.structure;
     focus = canned.focus;
     intensity = canned.intensity;

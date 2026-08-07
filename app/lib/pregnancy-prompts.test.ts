@@ -7,6 +7,7 @@ import {
   resolveStructure,
 } from "./pregnancy-prompts";
 import type { Movement } from "@/lib/movements/types";
+import { getIntensityCap } from "@/lib/stages/pregnancyStages";
 
 function mv(over: Partial<Movement> & Pick<Movement, "slug">): Movement {
   return {
@@ -83,6 +84,15 @@ describe("buildCannedSession", () => {
     expect(canned.structure[0].slug).toBe("warmup_cooldown_general");
   });
 
+  it("shapes each item (strength -> sets, breathing -> duration)", () => {
+    const canned = buildCannedSession(POOL, { time: 60 });
+    const strength = canned.structure.find((s) => s.slug === "glute_bridge");
+    const breathing = canned.structure.find((s) => s.slug === "diaphragmatic_breathing_360");
+    expect(strength?.sets).toBeGreaterThan(0);
+    expect(breathing?.durationSeconds).toBeGreaterThan(0);
+    expect(breathing?.sets).toBe(0);
+  });
+
   it("is deterministic (same input -> same output)", () => {
     const a = buildCannedSession(POOL, { time: 40 });
     const b = buildCannedSession(POOL, { time: 40 });
@@ -95,17 +105,38 @@ describe("buildCannedSession", () => {
   });
 });
 
-describe("resolveStructure — canonical names from the pool", () => {
-  it("uses the pool's name/category, not the model's", () => {
-    const poolBySlug = new Map(POOL.map((m) => [m.slug, m]));
+describe("resolveStructure — canonical names + shaped prescriptions", () => {
+  const poolBySlug = new Map(POOL.map((m) => [m.slug, m]));
+
+  it("uses the pool's name (model cannot rename) and the model's numbers", () => {
     const parsed = {
       structure: [
-        { slug: "glute_bridge", movement: "MODEL RENAMED THIS", prescription: "2x10", note: "n" },
+        { slug: "glute_bridge", movement: "MODEL RENAMED THIS", sets: 3, reps: "10", intensity: "controlled", note: "n" },
       ],
     };
     const items = resolveStructure(parsed, poolBySlug);
     expect(items[0].movement).toBe("Name of glute_bridge");
-    expect(items[0].prescription).toBe("2x10");
+    expect(items[0].sets).toBe(3);
+    expect(items[0].reps).toBe("10");
+    expect(items[0].durationSeconds).toBe(0);
+    expect(items[0].intensity).toBe("controlled");
+  });
+
+  it("shapes a time-based (breathing) movement as duration, not sets", () => {
+    const parsed = {
+      structure: [{ slug: "diaphragmatic_breathing_360", duration_seconds: 240, intensity: "slow" }],
+    };
+    const items = resolveStructure(parsed, poolBySlug);
+    expect(items[0].sets).toBe(0);
+    expect(items[0].reps).toBe("");
+    expect(items[0].durationSeconds).toBe(240);
+  });
+
+  it("falls back to category defaults when the model omits numbers", () => {
+    const parsed = { structure: [{ slug: "glute_bridge" }] };
+    const items = resolveStructure(parsed, poolBySlug);
+    expect(items[0].sets).toBeGreaterThan(0); // strength -> set-based default
+    expect(items[0].intensity).not.toBe("");
   });
 });
 
@@ -116,6 +147,13 @@ describe("prompt content", () => {
     expect(p).toContain("only use movements from the candidate list");
   });
 
+  it("system prompt demands a real session and forbids authoring rationale", () => {
+    const p = buildPregnancySystemPrompt().toLowerCase();
+    expect(p).toContain("not a mobility flow");
+    expect(p).toContain("never exceed the");
+    expect(p).toContain("never invent your own physiological");
+  });
+
   it("user message lists every candidate slug", () => {
     const msg = buildPregnancyUserMessage(POOL, {
       stageKey: "t1_early",
@@ -124,5 +162,63 @@ describe("prompt content", () => {
     });
     POOL.forEach((m) => expect(msg).toContain(m.slug));
     expect(msg).toContain("40 minutes");
+  });
+
+  it("user message carries the band prescription and vetted rationale verbatim", () => {
+    const cap = getIntensityCap("t2_golden");
+    const msg = buildPregnancyUserMessage(POOL, {
+      stageKey: "t2_golden",
+      gestationalWeek: 16,
+      time: 40,
+    });
+    expect(msg).toContain(`RPE ${cap.rpeCeiling}`);
+    expect(msg).toContain("strength-category movements");
+    expect(msg).toContain("reps in reserve");
+    expect(msg).toContain("talk test");
+    // coachingRationale is vetted text; the model reads it, so it must appear verbatim.
+    expect(msg).toContain(cap.coachingRationale.slice(0, 50));
+  });
+});
+
+describe("buildCannedSession — deterministic strength floor from the band cap", () => {
+  const mixedPool: Movement[] = [
+    ...Array.from({ length: 6 }, (_, i) => mv({ slug: `str_${i}`, category: "strength" })),
+    ...Array.from({ length: 2 }, (_, i) => mv({ slug: `edu_${i}`, category: "education" })),
+    ...Array.from({ length: 2 }, (_, i) => mv({ slug: `bre_${i}`, category: "breathing" })),
+    ...Array.from({ length: 2 }, (_, i) => mv({ slug: `mob_${i}`, category: "mobility" })),
+    ...Array.from({ length: 2 }, (_, i) => mv({ slug: `pf_${i}`, category: "pelvic_floor" })),
+    ...Array.from({ length: 2 }, (_, i) => mv({ slug: `walk_${i}`, category: "walking" })),
+  ];
+
+  it("includes at least strengthMovementTarget[0] strength movements (and at most [1])", () => {
+    const cap = getIntensityCap("t2_golden"); // strengthMovementTarget [4, 6]
+    const canned = buildCannedSession(mixedPool, {
+      time: 60,
+      context: { stageKey: "t2_golden", gestationalWeek: 16, time: 60 },
+    });
+    const strengthCount = canned.structure.filter((s) => s.category === "strength").length;
+    expect(strengthCount).toBeGreaterThanOrEqual(cap.strengthMovementTarget[0]);
+    expect(strengthCount).toBeLessThanOrEqual(cap.strengthMovementTarget[1]);
+  });
+
+  it("expresses the band's sets/reps/effort on strength items", () => {
+    const cap = getIntensityCap("t2_golden");
+    const canned = buildCannedSession(mixedPool, {
+      time: 60,
+      context: { stageKey: "t2_golden", gestationalWeek: 16, time: 60 },
+    });
+    const s = canned.structure.find((x) => x.category === "strength");
+    expect(s?.sets).toBe(cap.setsPerMovement[0]);
+    expect(s?.reps).toBe(`${cap.repRange[0]}-${cap.repRange[1]}`);
+    expect(s?.intensity).toContain(`RPE ${cap.rpeCeiling}`);
+  });
+
+  it("without a band context applies no floor (back-compat)", () => {
+    // total = 4 (time 20); category order fills education+breathing first, so a
+    // small no-context session need not contain any strength.
+    const poolSlugs = new Set(mixedPool.map((m) => m.slug));
+    const canned = buildCannedSession(mixedPool, { time: 20 });
+    expect(canned.structure.length).toBe(4);
+    canned.structure.forEach((s) => expect(poolSlugs.has(s.slug)).toBe(true));
   });
 });

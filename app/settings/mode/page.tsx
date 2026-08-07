@@ -15,7 +15,16 @@ import type {
 type AnswerKey = "q1" | "q2" | "q3" | "q4";
 type Answers = Record<AnswerKey, ScreeningAnswer | undefined>;
 
-const STEPS = ["mode", "due", "screening", "provider"] as const;
+const STEPS = ["mode", "due", "activity", "screening", "provider"] as const;
+
+type ActivityLevel = "sedentary" | "light" | "active" | "athlete";
+
+const ACTIVITY_OPTIONS: Array<{ value: ActivityLevel; label: string }> = [
+  { value: "sedentary", label: "Not very active" },
+  { value: "light", label: "Lightly active — walking, occasional classes" },
+  { value: "active", label: "Active — regular training most weeks" },
+  { value: "athlete", label: "Athlete — structured training, competing or close to it" },
+];
 
 const ANSWER_OPTIONS: Array<{ value: ScreeningAnswer; label: string }> = [
   { value: "yes", label: "Yes" },
@@ -93,6 +102,7 @@ export default function ModeSwitchPage() {
 
   const [mode, setMode] = useState<"cycle" | "pregnancy" | "postpartum" | "">("");
   const [dueDate, setDueDate] = useState("");
+  const [activityLevel, setActivityLevel] = useState<ActivityLevel | "">("");
   const [answers, setAnswers] = useState<Answers>({
     q1: undefined,
     q2: undefined,
@@ -165,6 +175,8 @@ export default function ModeSwitchPage() {
         return mode === "pregnancy" || (mode === "cycle" && currentMode === "pregnancy");
       case "due":
         return dueDate !== "" && duePreview.ok;
+      case "activity":
+        return activityLevel !== "";
       case "screening":
         // All four answered. NOT gated on the optional q4 detail.
         return SCREENING_QUESTIONS.every((q) => answers[q.key] !== undefined);
@@ -173,7 +185,7 @@ export default function ModeSwitchPage() {
       default:
         return false;
     }
-  }, [step, mode, currentMode, dueDate, duePreview, answers, providerAdvice, disclaimerAck]);
+  }, [step, mode, currentMode, dueDate, duePreview, activityLevel, answers, providerAdvice, disclaimerAck]);
 
   const goBack = () => {
     setError(null);
@@ -211,6 +223,7 @@ export default function ModeSwitchPage() {
           providerAdvice,
           disclaimerAcknowledged: disclaimerAck,
           q4_detail: q4Detail,
+          priorActivityLevel: activityLevel,
         }),
       });
       const data = await res.json();
@@ -472,7 +485,34 @@ export default function ModeSwitchPage() {
             </div>
           ) : null}
 
-          {/* Step 3 — screening questions */}
+          {/* Step 3 — prior activity level */}
+          {step === "activity" ? (
+            <fieldset className="border-0 p-0 m-0">
+              <legend className="pf-form-section-title mb-1">
+                How active were you before pregnancy?
+              </legend>
+              <p className="pf-form-section-hint mb-3">
+                This helps us pitch sessions at the right level for you.
+              </p>
+              <div className="pf-radio-group pf-radio-group-single" role="radiogroup" aria-label="Prior activity level">
+                {ACTIVITY_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="pf-radio-option">
+                    <input
+                      type="radio"
+                      name="activity-level"
+                      value={opt.value}
+                      checked={activityLevel === opt.value}
+                      onChange={() => setActivityLevel(opt.value)}
+                      className="pf-radio-input"
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+
+          {/* Step 4 — screening questions */}
           {step === "screening" ? (
             <div className="space-y-5">
               <p className="pf-form-section-hint">
@@ -540,7 +580,7 @@ export default function ModeSwitchPage() {
             </div>
           ) : null}
 
-          {/* Step 4 — provider advice + clearance acknowledgment */}
+          {/* Step 5 — provider advice + clearance acknowledgment */}
           {step === "provider" ? (
             <div className="space-y-4">
               <fieldset className="border-0 p-0 m-0">
