@@ -5,6 +5,8 @@ import {
   validatePregnancyWorkout,
   buildCannedSession,
   resolveStructure,
+  isLoadedMovement,
+  loadedFloorFor,
 } from "./pregnancy-prompts";
 import type { Movement } from "@/lib/movements/types";
 import { getIntensityCap } from "@/lib/stages/pregnancyStages";
@@ -220,5 +222,84 @@ describe("buildCannedSession — deterministic strength floor from the band cap"
     const canned = buildCannedSession(mixedPool, { time: 20 });
     expect(canned.structure.length).toBe(4);
     canned.structure.forEach((s) => expect(poolSlugs.has(s.slug)).toBe(true));
+  });
+});
+
+describe("loaded-movement floor (equipment: dumbbell | band)", () => {
+  const loadedPool: Movement[] = [
+    mv({ slug: "db_squat", category: "strength", equipment: ["dumbbell"] }),
+    mv({ slug: "db_row", category: "strength", equipment: ["dumbbell"] }),
+    mv({ slug: "band_press", category: "strength", equipment: ["band"] }),
+    mv({ slug: "bird_dog", category: "strength", equipment: [] }),
+    mv({ slug: "glute_bridge_bw", category: "strength", equipment: [] }),
+    mv({ slug: "clamshell", category: "strength", equipment: [] }),
+    mv({ slug: "breath1", category: "breathing" }),
+    mv({ slug: "walk1", category: "walking" }),
+    mv({ slug: "edu1", category: "education" }),
+  ];
+
+  it("isLoadedMovement detects dumbbell/band, ignores bodyweight", () => {
+    expect(isLoadedMovement(mv({ slug: "a", equipment: ["dumbbell"] }))).toBe(true);
+    expect(isLoadedMovement(mv({ slug: "b", equipment: ["band", "mat"] }))).toBe(true);
+    expect(isLoadedMovement(mv({ slug: "c", equipment: [] }))).toBe(false);
+    expect(isLoadedMovement(mv({ slug: "d", equipment: ["mat"] }))).toBe(false);
+  });
+
+  it("an 'active' user with dumbbells available gets >= 2 loaded movements", () => {
+    const canned = buildCannedSession(loadedPool, {
+      time: 60,
+      context: {
+        stageKey: "t2_golden",
+        gestationalWeek: 16,
+        time: 60,
+        priorActivityLevel: "active",
+      },
+    });
+    const loadedSlugs = new Set(loadedPool.filter(isLoadedMovement).map((m) => m.slug));
+    const loadedInSession = canned.structure.filter((s) => loadedSlugs.has(s.slug)).length;
+    expect(loadedInSession).toBeGreaterThanOrEqual(2); // t2_golden active floor
+  });
+
+  it("a 'sedentary' user is not forced into loaded work (floor 0)", () => {
+    const cap = getIntensityCap("t2_golden");
+    expect(loadedFloorFor(loadedPool, cap, "sedentary")).toBe(0);
+  });
+
+  it("a user with no loaded equipment still gets a valid session (floor clamps to available)", () => {
+    const bodyweightPool = loadedPool.map((m) => ({ ...m, equipment: [] as string[] }));
+    const cap = getIntensityCap("t2_golden");
+    expect(loadedFloorFor(bodyweightPool, cap, "active")).toBe(0);
+    const canned = buildCannedSession(bodyweightPool, {
+      time: 60,
+      context: {
+        stageKey: "t2_golden",
+        gestationalWeek: 16,
+        time: 60,
+        priorActivityLevel: "active",
+      },
+    });
+    expect(canned.structure.length).toBeGreaterThan(0);
+  });
+
+  it("validatePregnancyWorkout fails a response below the loaded floor, passes at/above", () => {
+    const poolSlugs = new Set(loadedPool.map((m) => m.slug));
+    const poolBySlug = new Map(loadedPool.map((m) => [m.slug, m]));
+
+    const below = { structure: [{ slug: "bird_dog" }, { slug: "glute_bridge_bw" }] };
+    const rBelow = validatePregnancyWorkout(below, poolSlugs, { poolBySlug, loadedFloor: 2 });
+    expect(rBelow.valid).toBe(false);
+    expect(rBelow.belowLoadedFloor).toBe(true);
+    expect(rBelow.loadedCount).toBe(0);
+
+    const meets = { structure: [{ slug: "db_squat" }, { slug: "band_press" }, { slug: "bird_dog" }] };
+    const rMeets = validatePregnancyWorkout(meets, poolSlugs, { poolBySlug, loadedFloor: 2 });
+    expect(rMeets.valid).toBe(true);
+    expect(rMeets.loadedCount).toBe(2);
+  });
+
+  it("no loadedFloor opt -> loaded count not enforced (back-compat)", () => {
+    const poolSlugs = new Set(loadedPool.map((m) => m.slug));
+    const bodyweightOnly = { structure: [{ slug: "bird_dog" }] };
+    expect(validatePregnancyWorkout(bodyweightOnly, poolSlugs).valid).toBe(true);
   });
 });

@@ -11,6 +11,12 @@ import {
 } from "../../lib/difficulty";
 import MovementProgressionBlock from "../../components/MovementProgressionBlock";
 import CoachingCard from "../../components/CoachingCard";
+import { buildPregnancyCoachingDisplay } from "../../lib/pregnancy-display";
+import {
+  getIntensityCap,
+  stageOrdinal,
+  type StageKey,
+} from "@/lib/stages/pregnancyStages";
 import {
   buildLastSessionMap,
   shouldShowProgressionBlock,
@@ -39,7 +45,28 @@ type MovementState = {
   // Pregnancy-only prescription fields (0 / "" for cycle workouts).
   durationSeconds: number;
   intensity: string;
+  // Movement category. Drives set-logging vs duration display (see isSetLogged).
+  // "" for cycle workouts, whose movements are always set-logged.
+  category: string;
 };
+
+/**
+ * Categories that are time-based (duration display, no inputs). Everything else
+ * — strength, mobility, pelvic_floor, and cycle movements (category "") — is
+ * set-logged: it gets weight/reps inputs, same as cycle. The branch is on the
+ * MOVEMENT'S CATEGORY, never on training_mode: a goblet squat needs load
+ * logging in pregnancy exactly as in cycle.
+ */
+const TIME_BASED_CATEGORIES = new Set([
+  "breathing",
+  "walking",
+  "recovery",
+  "education",
+]);
+
+function isSetLogged(category: string): boolean {
+  return !TIME_BASED_CATEGORIES.has(category);
+}
 
 type FlowBlock = {
   block: string;
@@ -81,18 +108,6 @@ function formatDuration(seconds: number): string {
   if (seconds <= 0) return "";
   if (seconds >= 60) return `${Math.round(seconds / 60)} min`;
   return `${seconds}s`;
-}
-
-/** Pregnancy target line: sets×reps or duration, plus the intensity cue. */
-function pregnancyTargetLine(item: MovementState): string {
-  const target =
-    item.sets > 0
-      ? `${item.sets} × ${item.reps || "as able"}`
-      : formatDuration(item.durationSeconds);
-  const parts: string[] = [];
-  if (target) parts.push(`Target: ${target}`);
-  if (item.intensity) parts.push(item.intensity);
-  return parts.join(" • ");
 }
 
 /** Keep latest row per movement slot + set when users save more than once. */
@@ -203,6 +218,7 @@ export default function WorkoutPage() {
   const [lastSessionByMovement, setLastSessionByMovement] = useState<
     Record<string, string>
   >({});
+  const [recentSessionCount, setRecentSessionCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
@@ -211,6 +227,33 @@ export default function WorkoutPage() {
   // finish flow and movement cards branch on this. phase is set to 'pregnancy'
   // at generation time.
   const isPregnancy = workout?.phase === "pregnancy";
+
+  // Pregnancy coaching context comes from generation_params (parseGenerationParams
+  // returns null for pregnancy, which stores `mode` not `phase`), so read it
+  // directly. The cap (and its vetted coachingRationale) is derived from
+  // stage_key — never from the model.
+  const pregParams = (workout?.generation_params ?? {}) as Record<string, unknown>;
+  const pregStageKeyRaw =
+    typeof pregParams.stage_key === "string" ? pregParams.stage_key : null;
+  const pregStageKey =
+    pregStageKeyRaw && stageOrdinal(pregStageKeyRaw) !== null
+      ? (pregStageKeyRaw as StageKey)
+      : null;
+  const pregWeek = Number(pregParams.gestational_week);
+  const pregActivity =
+    typeof pregParams.prior_activity_level === "string"
+      ? pregParams.prior_activity_level
+      : null;
+  const pregCap = isPregnancy && pregStageKey ? getIntensityCap(pregStageKey) : null;
+  const pregnancyCoaching =
+    isPregnancy && pregStageKey && Number.isFinite(pregWeek)
+      ? buildPregnancyCoachingDisplay({
+          stageKey: pregStageKey,
+          gestationalWeek: pregWeek,
+          priorActivityLevel: pregActivity,
+          recentSessionCount,
+        })
+      : null;
 
   useEffect(() => {
     if (!onboardingReady) return;
@@ -275,6 +318,7 @@ export default function WorkoutPage() {
             notes: "",
             durationSeconds: Number(item.durationSeconds) || 0,
             intensity: String(item.intensity ?? ""),
+            category: String(item.category ?? ""),
           }));
 
           const logs = logsRaw as WorkoutLogRow[];
@@ -296,6 +340,8 @@ export default function WorkoutPage() {
               .neq("id", workoutId)
               .order("created_at", { ascending: false })
               .limit(3);
+
+            setRecentSessionCount(pastWorkouts?.length ?? 0);
 
             if (pastWorkouts && pastWorkouts.length > 0) {
               const pastIds = pastWorkouts.map((w) => w.id);
@@ -601,12 +647,16 @@ export default function WorkoutPage() {
           </button>
         </div>
 
-        <CoachingCard
-          phase={workout.phase}
-          summary={workout.cycle_guidance?.summary}
-          duringWorkout={workout.cycle_guidance?.during_workout}
-          adjustments={workout.cycle_guidance?.adjustments}
-        />
+        {pregnancyCoaching ? (
+          <CoachingCard display={pregnancyCoaching} />
+        ) : (
+          <CoachingCard
+            phase={workout.phase}
+            summary={workout.cycle_guidance?.summary}
+            duringWorkout={workout.cycle_guidance?.during_workout}
+            adjustments={workout.cycle_guidance?.adjustments}
+          />
+        )}
 
         <div className="space-y-4">
           <h2 className="pf-heading-section">Your Plan</h2>
@@ -641,6 +691,8 @@ export default function WorkoutPage() {
               lastSession,
               item.note
             );
+            // Category, not mode, decides logging vs duration display.
+            const setLogged = isSetLogged(item.category);
 
             return (
             <div
@@ -654,14 +706,19 @@ export default function WorkoutPage() {
               />
 
               {isPregnancy ? (
-                <>
-                  <p className="text-sm text-pf-text-muted">
-                    {pregnancyTargetLine(item)}
-                  </p>
-                  {item.note ? (
-                    <p className="text-sm text-pf-coral">{item.note}</p>
-                  ) : null}
-                </>
+                <MovementProgressionBlock
+                  sets={item.sets}
+                  reps={item.reps}
+                  rir={setLogged && pregCap ? String(pregCap.rirFloor) : ""}
+                  reasonNote={item.note}
+                  targetOverride={
+                    setLogged
+                      ? undefined
+                      : [formatDuration(item.durationSeconds), item.intensity]
+                          .filter(Boolean)
+                          .join(" • ")
+                  }
+                />
               ) : showProgression ? (
                 <MovementProgressionBlock
                   sets={item.sets}
@@ -681,8 +738,11 @@ export default function WorkoutPage() {
                 </>
               )}
 
-              {/* Cycle strength logging — pregnancy movements have no weight. */}
-              {!isPregnancy ? (
+              {/* Set logging: cycle movements and set-based pregnancy movements
+                  (strength / mobility / pelvic_floor). Time-based pregnancy
+                  movements (breathing / walking / recovery / education) have
+                  nothing to log. */}
+              {setLogged ? (
                 <div className="space-y-2">
                   {item.logs.map((set, idx) => (
                     <div key={idx} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">

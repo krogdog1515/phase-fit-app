@@ -24,8 +24,10 @@ import {
   validatePregnancyWorkout,
   buildCannedSession,
   resolveStructure,
+  loadedFloorFor,
   type PregnancyStructureItem,
 } from "../../lib/pregnancy-prompts";
+import { getIntensityCap } from "@/lib/stages/pregnancyStages";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -488,13 +490,18 @@ async function handlePregnancyGeneration(opts: {
   const poolSlugs = new Set(pool.map((m) => m.slug));
   const poolBySlug = new Map(pool.map((m) => [m.slug, m]));
 
+  // Loaded-movement floor for this band + activity level, clamped to the pool.
+  const cap = getIntensityCap(stage.stageKey);
+  const priorActivity = (screening.prior_activity_level as string | null) ?? null;
+  const loadedFloor = loadedFloorFor(pool, cap, priorActivity);
+
   // 5. Constrained generation with one retry, then a deterministic fallback.
   const systemPrompt = buildPregnancySystemPrompt();
   const userMessage = buildPregnancyUserMessage(pool, {
     stageKey: stage.stageKey,
     gestationalWeek: stage.gestationalWeek,
     time: duration,
-    priorActivityLevel: (screening.prior_activity_level as string | null) ?? null,
+    priorActivityLevel: priorActivity,
   });
 
   let structure: PregnancyStructureItem[] | null = null;
@@ -518,8 +525,9 @@ async function handlePregnancyGeneration(opts: {
     } catch {
       continue;
     }
-    // 6. Validate: every slug must be in the pool. Fail closed otherwise.
-    if (!validatePregnancyWorkout(parsed, poolSlugs).valid) {
+    // 6. Validate: every slug in the pool AND the loaded-movement floor met.
+    //    Fail closed otherwise (retry once, then deterministic fallback).
+    if (!validatePregnancyWorkout(parsed, poolSlugs, { poolBySlug, loadedFloor }).valid) {
       continue;
     }
     structure = resolveStructure(parsed, poolBySlug);
@@ -541,7 +549,7 @@ async function handlePregnancyGeneration(opts: {
         stageKey: stage.stageKey,
         gestationalWeek: stage.gestationalWeek,
         time: duration,
-        priorActivityLevel: (screening.prior_activity_level as string | null) ?? null,
+        priorActivityLevel: priorActivity,
       },
     });
     structure = canned.structure;
@@ -571,6 +579,7 @@ async function handlePregnancyGeneration(opts: {
       duration,
       stage_key: stage.stageKey,
       gestational_week: stage.gestationalWeek,
+      prior_activity_level: priorActivity,
       equipment: equipmentList,
       pool_slugs: [...poolSlugs],
       source,

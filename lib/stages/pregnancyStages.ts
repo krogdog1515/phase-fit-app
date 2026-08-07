@@ -67,6 +67,9 @@ export function stageOrdinal(key: string): number | null {
 /** Coaching energy descriptor for a band (non-clinical). */
 export type EnergyState = 'low' | 'building' | 'stable' | 'deload';
 
+/** Self-reported prior activity level, from pregnancy screening. */
+export type PriorActivityLevel = 'sedentary' | 'light' | 'active' | 'athlete';
+
 /**
  * Movement categories, mirrored from the `movements` table check constraint.
  * Used only to type the (currently empty) `allowedCategories` placeholder.
@@ -97,6 +100,14 @@ export type IntensityCap = {
   rirFloor: number;
   setsPerMovement: [number, number];
   strengthMovementTarget: [number, number];
+  /**
+   * Minimum number of LOADED strength movements (equipment includes 'dumbbell'
+   * or 'band') required when the user has that equipment available, keyed by
+   * prior activity level. The count floor (strengthMovementTarget) alone is
+   * satisfied by bodyweight moves; this guarantees loaded work actually appears
+   * so load can be tracked and progressed. Clamped to what the pool offers.
+   */
+  loadedStrengthTarget: Record<PriorActivityLevel, number>;
   loadGuidance: 'maintain' | 'reduce_load_increase_reps' | 'deload';
   weeklyVolumeTargetMin: 150;
   /**
@@ -150,6 +161,7 @@ export const PREGNANCY_STAGES: readonly PregnancyStage[] = [
       setsPerMovement: [2, 3], // [J]
       strengthMovementTarget: [3, 5], // [J]
       loadGuidance: 'reduce_load_increase_reps',
+      loadedStrengthTarget: { sedentary: 0, light: 1, active: 2, athlete: 2 }, // [J] judgment, not sourced
       weeklyVolumeTargetMin: 150, // [S] SOGC/CSEP 2019 Rec 2
       coachingRationale:
         "Nothing structural has changed yet — your uterus hasn't risen out of your pelvis, your centre of " +
@@ -180,6 +192,7 @@ export const PREGNANCY_STAGES: readonly PregnancyStage[] = [
       setsPerMovement: [2, 4], // [J]
       strengthMovementTarget: [3, 5], // [J]
       loadGuidance: 'reduce_load_increase_reps',
+      loadedStrengthTarget: { sedentary: 0, light: 1, active: 2, athlete: 2 }, // [J] judgment, not sourced
       weeklyVolumeTargetMin: 150, // [S] SOGC/CSEP 2019 Rec 2
       coachingRationale:
         "Most women start feeling more like themselves through these weeks — nausea and fatigue commonly ease " +
@@ -206,6 +219,7 @@ export const PREGNANCY_STAGES: readonly PregnancyStage[] = [
       setsPerMovement: [3, 4], // [J]
       strengthMovementTarget: [4, 6], // [J]
       loadGuidance: 'maintain',
+      loadedStrengthTarget: { sedentary: 0, light: 1, active: 2, athlete: 2 }, // [J] judgment, not sourced
       weeklyVolumeTargetMin: 150, // [S] SOGC/CSEP 2019 Rec 2
       coachingRationale:
         "This is the strongest training window of the pregnancy, and it isn't folklore — the main randomised " +
@@ -235,6 +249,7 @@ export const PREGNANCY_STAGES: readonly PregnancyStage[] = [
       setsPerMovement: [2, 4], // [J]
       strengthMovementTarget: [3, 5], // [J]
       loadGuidance: 'reduce_load_increase_reps',
+      loadedStrengthTarget: { sedentary: 0, light: 1, active: 2, athlete: 2 }, // [J] judgment, not sourced
       weeklyVolumeTargetMin: 150, // [S] SOGC/CSEP 2019 Rec 2
       coachingRationale:
         "Still a strong training window — what changes is positioning, not capacity. Lying flat on your back " +
@@ -263,6 +278,7 @@ export const PREGNANCY_STAGES: readonly PregnancyStage[] = [
       setsPerMovement: [2, 3], // [J]
       strengthMovementTarget: [3, 4], // [J]
       loadGuidance: 'reduce_load_increase_reps',
+      loadedStrengthTarget: { sedentary: 0, light: 1, active: 2, athlete: 2 }, // [J] judgment, not sourced
       weeklyVolumeTargetMin: 150, // [S] SOGC/CSEP 2019 Rec 2
       coachingRationale:
         "Your centre of gravity has moved forward and relaxin has loosened your joints — together that means " +
@@ -292,6 +308,7 @@ export const PREGNANCY_STAGES: readonly PregnancyStage[] = [
       setsPerMovement: [2, 3], // [J]
       strengthMovementTarget: [2, 3], // [J]
       loadGuidance: 'deload',
+      loadedStrengthTarget: { sedentary: 0, light: 1, active: 2, athlete: 2 }, // [J] judgment, not sourced
       weeklyVolumeTargetMin: 150, // [S] SOGC/CSEP 2019 Rec 2
       coachingRationale:
         "Your blood volume and cardiac output are near their peak and your body is doing an enormous amount of " +

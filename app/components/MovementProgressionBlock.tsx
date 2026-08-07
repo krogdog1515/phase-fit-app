@@ -4,6 +4,11 @@ type MovementProgressionBlockProps = {
   rir: string;
   lastSession?: string;
   reasonNote?: string;
+  /**
+   * Replaces the computed "sets × reps • RIR" target string (e.g. time-based
+   * pregnancy movements: "5 min • conversational pace"). Same label + styling.
+   */
+  targetOverride?: string;
 };
 
 export default function MovementProgressionBlock({
@@ -12,8 +17,11 @@ export default function MovementProgressionBlock({
   rir,
   lastSession,
   reasonNote,
+  targetOverride,
 }: MovementProgressionBlockProps) {
-  const targetToday = `${sets} sets × ${reps}${rir.trim() ? ` • RIR ${rir.trim()}` : ""}`;
+  const targetToday = targetOverride?.trim()
+    ? targetOverride.trim()
+    : `${sets} sets × ${reps}${rir.trim() ? ` • RIR ${rir.trim()}` : ""}`;
 
   return (
     <div className="rounded-xl bg-pf-bg border border-pf-border px-3 py-2.5 space-y-1.5 text-sm">

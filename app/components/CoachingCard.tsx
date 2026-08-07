@@ -1,10 +1,15 @@
-import { buildCoachingDisplay } from "../lib/coaching-display";
+import { buildCoachingDisplay, type CoachingDisplay } from "../lib/coaching-display";
 
 type CoachingCardProps = {
   phase?: string;
   summary?: string;
   duringWorkout?: string;
   adjustments?: string;
+  /**
+   * Pre-structured content (e.g. pregnancy). When provided it is rendered as-is
+   * and the cycle prose heuristics are bypassed — same card, same sections.
+   */
+  display?: CoachingDisplay;
 };
 
 function BulletBlock({ title, items }: { title: string; items: string[] }) {
@@ -27,13 +32,16 @@ export default function CoachingCard({
   summary,
   duringWorkout,
   adjustments,
+  display,
 }: CoachingCardProps) {
-  const coaching = buildCoachingDisplay({
-    phase,
-    summary,
-    during_workout: duringWorkout,
-    adjustments,
-  });
+  const coaching =
+    display ??
+    buildCoachingDisplay({
+      phase,
+      summary,
+      during_workout: duringWorkout,
+      adjustments,
+    });
 
   const hasContent =
     coaching.coachNote ||

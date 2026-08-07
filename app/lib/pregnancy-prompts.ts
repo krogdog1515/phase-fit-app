@@ -1,5 +1,10 @@
 import type { Movement } from "@/lib/movements/types";
-import type { StageKey, MovementCategory, IntensityCap } from "@/lib/stages/pregnancyStages";
+import type {
+  StageKey,
+  MovementCategory,
+  IntensityCap,
+  PriorActivityLevel,
+} from "@/lib/stages/pregnancyStages";
 import { getIntensityCap } from "@/lib/stages/pregnancyStages";
 import { STAGE_BAND_LABELS } from "./pregnancy-display";
 
@@ -120,21 +125,65 @@ const LOAD_GUIDANCE_TEXT: Record<IntensityCap["loadGuidance"], string> = {
   deload: "deload — noticeably lighter than usual, prioritise movement quality",
 };
 
+/** Equipment values that make a movement "loaded" (so load can be tracked). */
+const LOADED_EQUIPMENT = new Set(["dumbbell", "band"]);
+
+/** A movement is loaded when its equipment includes a dumbbell or band. */
+export function isLoadedMovement(m: Movement): boolean {
+  return (m.equipment ?? []).some((e) => LOADED_EQUIPMENT.has(e));
+}
+
+function normalizeActivity(
+  level: string | null | undefined,
+): PriorActivityLevel | null {
+  return level === "sedentary" ||
+    level === "light" ||
+    level === "active" ||
+    level === "athlete"
+    ? level
+    : null;
+}
+
+/**
+ * Minimum loaded strength movements for this band + activity level, CLAMPED to
+ * what the candidate pool actually offers. If she has no loaded equipment this
+ * is 0 — never fail a request over it.
+ */
+export function loadedFloorFor(
+  pool: Movement[],
+  cap: IntensityCap,
+  priorActivityLevel: string | null | undefined,
+): number {
+  const level = normalizeActivity(priorActivityLevel);
+  const target = level ? cap.loadedStrengthTarget[level] : 0;
+  const available = pool.filter(isLoadedMovement).length;
+  return Math.min(target, available);
+}
+
 /** The band's vetted training prescription, rendered as hard prompt constraints. */
-function prescriptionBlock(cap: IntensityCap): string {
+function prescriptionBlock(cap: IntensityCap, loadedFloor: number): string {
   const [strMin, strMax] = cap.strengthMovementTarget;
   const [setMin, setMax] = cap.setsPerMovement;
   const [repMin, repMax] = cap.repRange;
-  return [
+  const lines = [
     "TRAINING PRESCRIPTION — HARD CONSTRAINTS (do not exceed):",
     `- Include between ${strMin} and ${strMax} strength-category movements. This is a real training`,
     "  session, not a mobility flow — do not default to gentleness.",
+  ];
+  if (loadedFloor > 0) {
+    lines.push(
+      `- At least ${loadedFloor} of those strength movements MUST be loaded (use a dumbbell or band).`,
+      "  Bodyweight strength alone does not satisfy this — load must be trackable and progressable.",
+    );
+  }
+  lines.push(
     `- Set-based movements: ${setMin}-${setMax} sets, ${repMin}-${repMax} reps.`,
     `- Effort ceiling: RPE ${cap.rpeCeiling}/10 — NEVER exceed it. Finish every set with at least`,
     `  ${cap.rirFloor} reps in reserve (RIR) — NEVER go below that.`,
     `- Load: ${LOAD_GUIDANCE_TEXT[cap.loadGuidance]}.`,
     "- For anything aerobic, gauge effort with the talk test (able to hold a conversation), not a number.",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 export function buildPregnancyUserMessage(
@@ -143,6 +192,7 @@ export function buildPregnancyUserMessage(
 ): string {
   const band = STAGE_BAND_LABELS[ctx.stageKey] ?? ctx.stageKey;
   const cap = getIntensityCap(ctx.stageKey);
+  const loadedFloor = loadedFloorFor(candidates, cap, ctx.priorActivityLevel);
   const list = candidates.map(candidateLine).join("\n");
   const activity = ctx.priorActivityLevel
     ? `\n- Prior activity level: ${ctx.priorActivityLevel} (tune volume/intensity to this — do not patronize an active client, do not overload a sedentary one)`
@@ -157,7 +207,7 @@ WHY TODAY LOOKS THE WAY IT DOES (vetted — you may quote or paraphrase this, bu
 NOT add your own physiological claims):
 ${cap.coachingRationale}
 
-${prescriptionBlock(cap)}
+${prescriptionBlock(cap, loadedFloor)}
 
 CANDIDATE LIST — select and sequence from these ONLY, by slug:
 ${list}
@@ -176,14 +226,21 @@ Use only slugs from the list above.
 export function validatePregnancyWorkout(
   parsed: unknown,
   poolSlugs: Set<string>,
-): { valid: boolean; slugs: string[]; badSlugs: string[] } {
+  opts?: { poolBySlug?: Map<string, Movement>; loadedFloor?: number },
+): {
+  valid: boolean;
+  slugs: string[];
+  badSlugs: string[];
+  loadedCount: number;
+  belowLoadedFloor: boolean;
+} {
   const structure =
     parsed && typeof parsed === "object" && Array.isArray((parsed as Record<string, unknown>).structure)
       ? ((parsed as Record<string, unknown>).structure as unknown[])
       : [];
 
   if (structure.length === 0) {
-    return { valid: false, slugs: [], badSlugs: [] };
+    return { valid: false, slugs: [], badSlugs: [], loadedCount: 0, belowLoadedFloor: false };
   }
 
   const slugs: string[] = [];
@@ -200,7 +257,26 @@ export function validatePregnancyWorkout(
     }
   }
 
-  return { valid: badSlugs.length === 0, slugs, badSlugs };
+  // Loaded-movement floor: count loaded movements among the valid slugs. Below
+  // the floor fails closed, exactly like an out-of-pool slug, so the caller runs
+  // the retry-then-fallback path.
+  let loadedCount = 0;
+  if (opts?.poolBySlug) {
+    for (const slug of slugs) {
+      const m = opts.poolBySlug.get(slug);
+      if (m && isLoadedMovement(m)) loadedCount++;
+    }
+  }
+  const floor = opts?.loadedFloor ?? 0;
+  const belowLoadedFloor = floor > 0 && loadedCount < floor;
+
+  return {
+    valid: badSlugs.length === 0 && !belowLoadedFloor,
+    slugs,
+    badSlugs,
+    loadedCount,
+    belowLoadedFloor,
+  };
 }
 
 /** Category ordering for the deterministic fallback (warm-up first, recovery last). */
@@ -271,14 +347,28 @@ export function buildCannedSession(
   const chosen: Movement[] = [];
   const used = new Set<string>();
 
-  // 1. Reserve the strength floor first, so strength can't be squeezed out by
-  //    earlier-ordered categories. Deterministic: strength movements by slug.
+  // 1. Reserve strength first, so it can't be squeezed out by earlier-ordered
+  //    categories. Loaded strength is reserved BEFORE bodyweight strength so the
+  //    loaded floor is met, then fill up to the strength-count floor with any
+  //    remaining strength. All deterministic (strength movements by slug).
   if (cap) {
     const strengthBySlug = pool
       .filter((m) => m.category === "strength")
       .sort((a, b) => a.slug.localeCompare(b.slug));
-    const floor = Math.min(cap.strengthMovementTarget[0], strengthBySlug.length, total);
-    for (const m of strengthBySlug.slice(0, floor)) {
+
+    const loadedFloor = loadedFloorFor(pool, cap, opts.context?.priorActivityLevel);
+    for (const m of strengthBySlug
+      .filter(isLoadedMovement)
+      .slice(0, Math.min(loadedFloor, total))) {
+      chosen.push(m);
+      used.add(m.slug);
+    }
+
+    const strengthFloor = Math.min(cap.strengthMovementTarget[0], strengthBySlug.length, total);
+    for (const m of strengthBySlug) {
+      if (chosen.filter((x) => x.category === "strength").length >= strengthFloor) break;
+      if (chosen.length >= total) break;
+      if (used.has(m.slug)) continue;
       chosen.push(m);
       used.add(m.slug);
     }

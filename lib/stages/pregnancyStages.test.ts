@@ -33,6 +33,14 @@ describe('PREGNANCY_STAGES — intensityCap fully populated', () => {
       expect(LOAD_GUIDANCE.has(c.loadGuidance)).toBe(true);
       expect(c.weeklyVolumeTargetMin).toBe(150);
 
+      for (const level of ['sedentary', 'light', 'active', 'athlete'] as const) {
+        expect(typeof c.loadedStrengthTarget[level]).toBe('number');
+        expect(c.loadedStrengthTarget[level]).toBeGreaterThanOrEqual(0);
+        expect(c.loadedStrengthTarget[level]).toBeLessThanOrEqual(
+          c.strengthMovementTarget[1],
+        );
+      }
+
       expect(typeof c.coachingRationale).toBe('string');
       expect(c.coachingRationale.trim().length).toBeGreaterThan(0);
 
