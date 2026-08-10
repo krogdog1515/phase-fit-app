@@ -28,6 +28,8 @@ import {
   type PregnancyStructureItem,
 } from "../../lib/pregnancy-prompts";
 import { getIntensityCap } from "@/lib/stages/pregnancyStages";
+import { evaluateRedFlags, type RedFlagAnswers } from "@/lib/safety/redFlags";
+import { isAcceptableClientDate } from "@/lib/dates";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -184,7 +186,7 @@ export async function POST(req: Request) {
     const user_id = userData.user.id;
 
     const body = await req.json();
-    const { phase, energy, time, style, notes, equipment } = body;
+    const { phase, energy, time, style, notes, equipment, date } = body;
 
     // Both branches need a session length.
     if (!time) {
@@ -224,6 +226,7 @@ export async function POST(req: Request) {
         user_id,
         time,
         equipment,
+        date,
         stageAnchorDate: modeProfile.stage_anchor_date,
       });
     }
@@ -402,6 +405,7 @@ async function handlePregnancyGeneration(opts: {
   user_id: string;
   time: unknown;
   equipment: unknown;
+  date: unknown;
   stageAnchorDate: string | null;
 }): Promise<Response> {
   const { user_id, stageAnchorDate } = opts;
@@ -457,6 +461,46 @@ async function handlePregnancyGeneration(opts: {
   if (result !== "clear") {
     return NextResponse.json(
       { error: "Workout generation is unavailable." },
+      { status: 409 }
+    );
+  }
+
+  // 2b. Daily red-flag check-in gate. Fail closed: an unusable date, no row for
+  //     today, a read error, or ANY flagged answer blocks — before any OpenAI
+  //     call. The verdict is recomputed from the stored answers via
+  //     evaluateRedFlags, never trusted from a stored boolean (the table is
+  //     client-writable), same reasoning as never trusting a client verdict.
+  if (!isAcceptableClientDate(opts.date, new Date())) {
+    return NextResponse.json(
+      { error: "Complete today's check-in before generating a workout." },
+      { status: 409 }
+    );
+  }
+  const { data: checkin, error: checkinError } = await supabase
+    .from("daily_checkins")
+    .select("red_flags")
+    .eq("user_id", user_id)
+    .eq("date", opts.date)
+    .maybeSingle();
+  if (checkinError) {
+    console.error("[generate-workout] daily_checkins read failed", checkinError);
+    return NextResponse.json(
+      { error: "Could not verify today's check-in." },
+      { status: 409 }
+    );
+  }
+  if (!checkin) {
+    return NextResponse.json(
+      { error: "Complete today's check-in before generating a workout." },
+      { status: 409 }
+    );
+  }
+  const checkinAnswers = (checkin.red_flags as { answers?: unknown } | null)?.answers;
+  if (evaluateRedFlags(checkinAnswers as RedFlagAnswers).blocked) {
+    return NextResponse.json(
+      {
+        error: "Today's check-in flagged something — we're not suggesting training today.",
+      },
       { status: 409 }
     );
   }

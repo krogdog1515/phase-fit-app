@@ -12,6 +12,7 @@ import {
 import MovementProgressionBlock from "../../components/MovementProgressionBlock";
 import CoachingCard from "../../components/CoachingCard";
 import { buildPregnancyCoachingDisplay } from "../../lib/pregnancy-display";
+import { localDateISO } from "@/lib/dates";
 import {
   getIntensityCap,
   stageOrdinal,
@@ -66,6 +67,21 @@ const TIME_BASED_CATEGORIES = new Set([
 
 function isSetLogged(category: string): boolean {
   return !TIME_BASED_CATEGORIES.has(category);
+}
+
+/**
+ * Format a time-based movement's duration, defensively.
+ *
+ * The model sometimes returns e.g. `duration_seconds: 5` meaning 5 MINUTES (so
+ * "Warm-up and cool-down" rendered as "5s"). On a time-based category a positive
+ * value under 60 is almost certainly minutes mis-typed as seconds — legitimate
+ * defaults for these categories are 0 or ≥120s — so we render it as minutes.
+ */
+function formatTimeBasedDuration(seconds: number, category: string): string {
+  if (TIME_BASED_CATEGORIES.has(category) && seconds > 0 && seconds < 60) {
+    return `${seconds} min`;
+  }
+  return formatDuration(seconds);
 }
 
 type FlowBlock = {
@@ -221,8 +237,13 @@ export default function WorkoutPage() {
   const [recentSessionCount, setRecentSessionCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  // Inline, scoped error copy (replacing window.alert): per-movement for set
+  // logging, saveError in the finish modal, actionError by the action buttons.
+  const [movementErrors, setMovementErrors] = useState<Record<number, string>>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const generationParams = parseGenerationParams(workout?.generation_params);
+  const parsedParams = parseGenerationParams(workout?.generation_params);
   // Pregnancy workouts are bodyweight/time-based — no weight to log, so the
   // finish flow and movement cards branch on this. phase is set to 'pregnancy'
   // at generation time.
@@ -400,6 +421,13 @@ export default function WorkoutPage() {
         };
       })
     );
+    // Editing a movement's sets clears its validation error.
+    setMovementErrors((prev) => {
+      if (!prev[movementIndex]) return prev;
+      const next = { ...prev };
+      delete next[movementIndex];
+      return next;
+    });
   };
 
   function buildLogRows(): Array<{
@@ -456,14 +484,19 @@ export default function WorkoutPage() {
   const saveWorkout = async () => {
     if (!workout) return;
 
-    for (const m of movements) {
-      for (const set of m.logs) {
+    setSaveError(null);
+    setMovementErrors({});
+
+    for (let mi = 0; mi < movements.length; mi++) {
+      for (const set of movements[mi].logs) {
         const wEmpty = set.weight.trim() === "";
         const rEmpty = set.reps.trim() === "";
         if (wEmpty !== rEmpty) {
-          alert(
-            "Each started set needs both weight and reps (or leave both blank)."
-          );
+          // Scope the error to the movement, and close the modal so she sees it.
+          setMovementErrors({
+            [mi]: "Each started set needs both weight and reps (or leave both blank).",
+          });
+          setShowFeedback(false);
           return;
         }
       }
@@ -478,7 +511,7 @@ export default function WorkoutPage() {
 
     const logsToInsert = buildLogRows();
     if (logsToInsert.length === 0 && !allowNoLogs) {
-      alert(
+      setSaveError(
         "Log at least one set with weight and reps so future workouts can progress."
       );
       return;
@@ -490,7 +523,7 @@ export default function WorkoutPage() {
         !Number.isFinite(row.reps) ||
         !Number.isFinite(row.set_number)
       ) {
-        alert("Invalid weight, reps, or set number. Check your log entries.");
+        setSaveError("Invalid weight, reps, or set number. Check your log entries.");
         return;
       }
     }
@@ -513,7 +546,7 @@ export default function WorkoutPage() {
 
       if (logError) {
         console.error(logError);
-        alert(logError.message || "Could not save workout logs.");
+        setSaveError(logError.message || "Could not save workout logs.");
         setSaving(false);
         return;
       }
@@ -531,7 +564,7 @@ export default function WorkoutPage() {
 
     if (workoutError) {
       console.error(workoutError);
-      alert(workoutError.message || "Could not save workout feedback.");
+      setSaveError(workoutError.message || "Could not save workout feedback.");
       setSaving(false);
       return;
     }
@@ -555,6 +588,8 @@ export default function WorkoutPage() {
     if (!workout) return;
     if (!confirm("Are you sure you want to cancel this workout?")) return;
 
+    setActionError(null);
+
     const { error } = await supabase
       .from("workouts")
       .update({ completed: "cancelled" })
@@ -562,7 +597,7 @@ export default function WorkoutPage() {
 
     if (error) {
       console.error(error);
-      alert(error.message || "Could not cancel workout.");
+      setActionError(error.message || "Could not cancel workout.");
       return;
     }
 
@@ -574,16 +609,25 @@ export default function WorkoutPage() {
   };
 
   const regenerateWorkout = async () => {
-    if (!workout?.user_id || !generationParams) {
-      alert(
+    if (!workout?.user_id || !parsedParams) {
+      setActionError(
         "Original session settings are unavailable. Generate a new workout from the builder."
       );
       return;
     }
 
+    setActionError(null);
     setRegenerating(true);
 
     try {
+      // The route derives the user from the bearer token for both branches.
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+
       const { error: skipError } = await supabase
         .from("workouts")
         .update({ completed: "skipped" })
@@ -591,25 +635,37 @@ export default function WorkoutPage() {
 
       if (skipError) {
         console.error(skipError);
-        alert(skipError.message || "Could not update the previous workout.");
+        setActionError(skipError.message || "Could not update the previous workout.");
         setRegenerating(false);
         return;
       }
 
-      if (workout.user_id) {
-        await logEvent(workout.user_id, "regeneration_triggered");
-      }
+      await logEvent(workout.user_id, "regeneration_triggered");
+
+      // Branch on the params shape, not training_mode. Pregnancy also sends the
+      // client-local date for the daily check-in gate.
+      const body =
+        parsedParams.kind === "pregnancy"
+          ? {
+              time: parsedParams.params.time,
+              equipment: parsedParams.params.equipment,
+              date: localDateISO(new Date()),
+            }
+          : toGenerateApiBody(parsedParams.params);
 
       const res = await fetch("/api/generate-workout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toGenerateApiBody(workout.user_id, generationParams)),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        alert("Failed to regenerate workout");
+        setActionError(data?.error ?? "Failed to regenerate workout.");
         setRegenerating(false);
         return;
       }
@@ -617,7 +673,7 @@ export default function WorkoutPage() {
       router.replace(`/workout/${data.id}`);
     } catch (err) {
       console.error(err);
-      alert("Something went wrong");
+      setActionError("Something went wrong. Please try again.");
       setRegenerating(false);
     }
   };
@@ -714,7 +770,10 @@ export default function WorkoutPage() {
                   targetOverride={
                     setLogged
                       ? undefined
-                      : [formatDuration(item.durationSeconds), item.intensity]
+                      : [
+                          formatTimeBasedDuration(item.durationSeconds, item.category),
+                          item.intensity,
+                        ]
                           .filter(Boolean)
                           .join(" • ")
                   }
@@ -774,6 +833,10 @@ export default function WorkoutPage() {
                 </div>
               ) : null}
 
+              {movementErrors[i] ? (
+                <p className="text-sm text-pf-coral">{movementErrors[i]}</p>
+              ) : null}
+
               <textarea
                 placeholder="Notes (optional)"
                 value={item.notes}
@@ -798,10 +861,10 @@ export default function WorkoutPage() {
           <button
             type="button"
             onClick={regenerateWorkout}
-            disabled={regenerating || !generationParams}
+            disabled={regenerating || !parsedParams}
             className="pf-btn-secondary disabled:opacity-60"
             title={
-              generationParams
+              parsedParams
                 ? undefined
                 : "Session settings unavailable — generate a new workout from the builder"
             }
@@ -817,6 +880,10 @@ export default function WorkoutPage() {
           >
             Cancel Workout
           </button>
+
+          {actionError ? (
+            <p className="text-sm text-pf-coral">{actionError}</p>
+          ) : null}
         </div>
 
         {showFeedback && (
@@ -888,6 +955,10 @@ export default function WorkoutPage() {
                   className="pf-textarea"
                 />
               </div>
+
+              {saveError ? (
+                <p className="text-sm text-pf-coral">{saveError}</p>
+              ) : null}
 
               <div className="flex gap-2">
                 <button

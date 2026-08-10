@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PhaseFitLogo from "../../components/PhaseFitLogo";
+import TriStateQuestion from "../../components/TriStateQuestion";
 import supabase from "../../lib/supabase";
 import { resolvePregnancyStage } from "@/lib/stages/resolvePregnancyStage";
 import { STAGE_BAND_LABELS } from "../../lib/pregnancy-display";
@@ -24,12 +25,6 @@ const ACTIVITY_OPTIONS: Array<{ value: ActivityLevel; label: string }> = [
   { value: "light", label: "Lightly active — walking, occasional classes" },
   { value: "active", label: "Active — regular training most weeks" },
   { value: "athlete", label: "Athlete — structured training, competing or close to it" },
-];
-
-const ANSWER_OPTIONS: Array<{ value: ScreeningAnswer; label: string }> = [
-  { value: "yes", label: "Yes" },
-  { value: "no", label: "No" },
-  { value: "unsure", label: "Not sure" },
 ];
 
 const Q4_DETAIL_MAX = 500;
@@ -524,34 +519,16 @@ export default function ModeSwitchPage() {
                   q.key === "q4" &&
                   (answers.q4 === "yes" || answers.q4 === "unsure");
                 return (
-                  <fieldset key={q.key} className="border-0 p-0 m-0">
-                    <legend className="pf-body-secondary text-sm mb-1">
-                      {q.text}
-                    </legend>
-                    {q.helper ? (
-                      <p className="pf-body-muted text-xs mb-2">{q.helper}</p>
-                    ) : null}
-                    <div
-                      className="pf-radio-group"
-                      role="radiogroup"
-                      aria-label={q.text}
-                    >
-                      {ANSWER_OPTIONS.map((opt) => (
-                        <label key={opt.value} className="pf-radio-option">
-                          <input
-                            type="radio"
-                            name={`screening-${q.key}`}
-                            checked={answers[q.key] === opt.value}
-                            onChange={() =>
-                              setAnswers((prev) => ({ ...prev, [q.key]: opt.value }))
-                            }
-                            className="pf-radio-input"
-                          />
-                          <span>{opt.label}</span>
-                        </label>
-                      ))}
-                    </div>
-
+                  <TriStateQuestion
+                    key={q.key}
+                    name={`screening-${q.key}`}
+                    legend={q.text}
+                    helper={q.helper}
+                    value={answers[q.key]}
+                    onChange={(v) =>
+                      setAnswers((prev) => ({ ...prev, [q.key]: v }))
+                    }
+                  >
                     {showDetail ? (
                       <div className="mt-3 space-y-1">
                         <label
@@ -574,7 +551,7 @@ export default function ModeSwitchPage() {
                         />
                       </div>
                     ) : null}
-                  </fieldset>
+                  </TriStateQuestion>
                 );
               })}
             </div>

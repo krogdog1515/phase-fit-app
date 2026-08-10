@@ -52,6 +52,17 @@ function futureDate(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 const DUE = futureDate(140);
+/** UTC today — accepted by the check-in gate's date validation. */
+const TODAY = new Date().toISOString().slice(0, 10);
+
+const ALL_NO = {
+  bleeding: "no",
+  fluidLeak: "no",
+  contractions: "no",
+  chestPain: "no",
+  dizziness: "no",
+  breathlessness: "no",
+};
 
 const POOL_ROWS = [
   { slug: "glute_bridge", name: "Glute bridge", category: "strength", min_stage: "t1_early", max_stage: "t3_late", focus_tags: [], equipment: [], exclusion_flags: [], cues: "c", modifications: null, benefit: null },
@@ -80,7 +91,7 @@ function req(body: Record<string, unknown>, opts: { auth?: string | null } = {})
   return new Request("http://localhost/api/generate-workout", {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify({ date: TODAY, ...body }),
   });
 }
 
@@ -99,6 +110,7 @@ beforeEach(() => {
     getUser: { data: { user: { id: "u1" } }, error: null },
     user_profiles: { data: { training_mode: "pregnancy", stage_anchor_date: DUE }, error: null },
     pregnancy_screening: { data: { screening_result: "clear" }, error: null },
+    daily_checkins: { data: { red_flags: { answers: ALL_NO } }, error: null },
     movements: { data: POOL_ROWS, error: null },
     workouts: { data: { id: "w1" }, error: null },
     events: { data: null, error: null },
@@ -155,6 +167,28 @@ describe("pregnancy gate — 409, OpenAI never called", () => {
   it("empty pool (no movements)", async () => {
     state.cfg.movements = { data: [], error: null };
     await expect409(await POST(req({ time: 40, equipment: [] })));
+  });
+
+  it("no daily check-in row for today", async () => {
+    state.cfg.daily_checkins = { data: null, error: null };
+    await expect409(await POST(req({ time: 40, equipment: [] })));
+  });
+
+  it("daily check-in read error (fail closed)", async () => {
+    state.cfg.daily_checkins = { data: null, error: { message: "boom" } };
+    await expect409(await POST(req({ time: 40, equipment: [] })));
+  });
+
+  it("today's check-in has a red flag", async () => {
+    state.cfg.daily_checkins = {
+      data: { red_flags: { answers: { ...ALL_NO, bleeding: "yes" } } },
+      error: null,
+    };
+    await expect409(await POST(req({ time: 40, equipment: [] })));
+  });
+
+  it("missing/invalid date on the request", async () => {
+    await expect409(await POST(req({ time: 40, equipment: [], date: "nope" })));
   });
 });
 

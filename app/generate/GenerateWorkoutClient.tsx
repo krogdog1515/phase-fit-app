@@ -7,6 +7,13 @@ import { useRouter } from "next/navigation";
 import supabase from "../lib/supabase";
 import { useOnboardingGuard } from "../lib/use-onboarding-guard";
 import { getUserProfile } from "../lib/user-profile";
+import { localDateISO } from "@/lib/dates";
+import { evaluateRedFlags, type RedFlagAnswers } from "@/lib/safety/redFlags";
+import {
+  resolvePregnancyGenerateView,
+  type CheckinStatus,
+} from "../lib/pregnancy-generate-gate";
+import PregnancyBlockedNotice from "../components/PregnancyBlockedNotice";
 
 // Grouped so chair/wall aren't an easy accidental omission — unchecking them
 // silently removes real movements (e.g. the only squat depends on a chair).
@@ -28,6 +35,23 @@ async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+/**
+ * Today's daily check-in status for a pregnant user. Fail closed: a read error
+ * or no row -> "needed"; a flagged check-in -> "blocked". Verdict recomputed via
+ * evaluateRedFlags, never trusted from a stored boolean.
+ */
+async function fetchCheckinStatus(userId: string): Promise<CheckinStatus> {
+  const { data, error } = await supabase
+    .from("daily_checkins")
+    .select("red_flags")
+    .eq("user_id", userId)
+    .eq("date", localDateISO(new Date()))
+    .maybeSingle();
+  if (error || !data) return "needed";
+  const answers = (data.red_flags as { answers?: unknown } | null)?.answers;
+  return evaluateRedFlags(answers as RedFlagAnswers).blocked ? "blocked" : "clear";
+}
+
 export default function GenerateWorkoutClient() {
   const router = useRouter();
   const onboardingReady = useOnboardingGuard();
@@ -38,7 +62,10 @@ export default function GenerateWorkoutClient() {
   // keeps any form from flashing before we know the mode + screening state.
   const [mode, setMode] = useState<string | null>(null);
   const [screening, setScreening] = useState<string | null>(null);
+  const [checkinStatus, setCheckinStatus] = useState<CheckinStatus>("loading");
   const [checking, setChecking] = useState(true);
+  // Inline, on-brand error copy — replaces window.alert everywhere here.
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Cycle inputs.
   const [phase, setPhase] = useState("");
@@ -73,7 +100,13 @@ export default function GenerateWorkoutClient() {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-        setScreening((row?.screening_result as string) ?? null);
+        const result = (row?.screening_result as string) ?? null;
+        setScreening(result);
+        // Daily check-in gate — same as the home screen. Only relevant once
+        // screening is clear; fail closed otherwise.
+        if (result === "clear") {
+          setCheckinStatus(await fetchCheckinStatus(data.user.id));
+        }
       }
       setChecking(false);
     };
@@ -89,9 +122,10 @@ export default function GenerateWorkoutClient() {
 
   const generateCycle = async () => {
     if (!phase || !energy || !time || !workoutStyle) {
-      alert("Please complete all fields");
+      setFormError("Please complete all fields.");
       return;
     }
+    setFormError(null);
     setLoading(true);
     try {
       const token = await getAccessToken();
@@ -109,23 +143,24 @@ export default function GenerateWorkoutClient() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert("Failed to generate workout");
+        setFormError(data?.error ?? "Failed to generate workout. Please try again.");
         setLoading(false);
         return;
       }
       router.push(`/workout/${data.id}`);
     } catch (err) {
       console.error(err);
-      alert("Something went wrong");
+      setFormError("Something went wrong. Please try again.");
       setLoading(false);
     }
   };
 
   const generatePregnancy = async () => {
     if (!time) {
-      alert("Select a session length");
+      setFormError("Select a session length.");
       return;
     }
+    setFormError(null);
     setLoading(true);
     try {
       const token = await getAccessToken();
@@ -139,18 +174,32 @@ export default function GenerateWorkoutClient() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ time, equipment }),
+        // date: client-local "today" for the daily check-in gate.
+        body: JSON.stringify({ time, equipment, date: localDateISO(new Date()) }),
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data?.error ?? "Failed to generate workout");
+        // 409 race: she may have flagged a check-in in another tab after this
+        // page loaded clear. Re-derive the gate; the render then shows the
+        // blocked / check-in card inline. Never a native alert.
+        if (res.status === 409 && user?.id) {
+          const status = await fetchCheckinStatus(user.id);
+          setCheckinStatus(status);
+          setFormError(
+            status === "clear"
+              ? data?.error ?? "We can't generate a session right now."
+              : null,
+          );
+        } else {
+          setFormError(data?.error ?? "Couldn't generate right now. Please try again.");
+        }
         setLoading(false);
         return;
       }
       router.push(`/workout/${data.id}`);
     } catch (err) {
       console.error(err);
-      alert("Something went wrong");
+      setFormError("Something went wrong. Please try again.");
       setLoading(false);
     }
   };
@@ -195,29 +244,54 @@ export default function GenerateWorkoutClient() {
 
   // ---- Pregnancy branch (separate from cycle; selected by training_mode) ----
   if (mode === "pregnancy") {
-    if (screening === "hard_stop") {
+    // Fail closed: the form renders ONLY for screening-clear + check-in-clear.
+    const view = resolvePregnancyGenerateView({ screening, checkinStatus });
+
+    if (view === "hard_stop") {
       return stateCard(
         "Pregnancy",
         "Let's pause on workouts",
         "Based on your screening, please work with your provider before training here.",
       );
     }
-    if (screening === "provider_conversation") {
+    if (view === "provider_conversation") {
       return stateCard(
         "Pregnancy",
         "A quick check first",
         "We're waiting on your provider conversation before suggesting workouts. Once you're cleared, come back and we'll build your session.",
       );
     }
-    if (screening !== "clear") {
+    if (view === "needs_screening") {
       return stateCard(
         "Pregnancy",
         "Finish your screening",
         "Complete the pregnancy screening in Settings before generating a workout.",
       );
     }
+    if (view === "checkin_needed") {
+      return stateCard(
+        "Pregnancy",
+        "Quick check first",
+        "Head back home to do today's check-in before we plan a session.",
+      );
+    }
+    if (view === "blocked") {
+      return (
+        <section className="pf-card-hero p-6 sm:p-8 text-center space-y-3">
+          <p className="pf-section-eyebrow">Pregnancy</p>
+          <PregnancyBlockedNotice />
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="pf-btn-secondary"
+          >
+            Back to home
+          </button>
+        </section>
+      );
+    }
 
-    // screening === 'clear' -> simplified pregnancy form.
+    // view === 'form' -> simplified pregnancy form.
     return (
       <>
         <section className="pf-card-hero p-6 sm:p-8" aria-labelledby="preg-config-heading">
@@ -284,6 +358,10 @@ export default function GenerateWorkoutClient() {
             </div>
           </div>
         </section>
+
+        {formError ? (
+          <p className="text-sm text-pf-coral">{formError}</p>
+        ) : null}
 
         <button
           type="button"
@@ -436,6 +514,10 @@ export default function GenerateWorkoutClient() {
           </div>
         </div>
       </section>
+
+      {formError ? (
+        <p className="text-sm text-pf-coral">{formError}</p>
+      ) : null}
 
       <button
         type="button"

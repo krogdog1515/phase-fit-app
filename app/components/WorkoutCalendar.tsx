@@ -16,12 +16,20 @@ type WorkoutCalendarProps = {
   workouts: CalendarWorkout[];
   outsideActivityDates?: string[];
   hideHeading?: boolean;
+  /**
+   * Show the cycle-phase legend. False in pregnancy mode — a Menstrual /
+   * Follicular / Ovulatory / Luteal legend is meaningless (and jarring) there.
+   * Cell colors still come from each workout's OWN phase, so a pre-switch cycle
+   * workout keeps its color and pregnancy rows fall back to the neutral dot.
+   */
+  showPhaseLegend?: boolean;
 };
 
 export default function WorkoutCalendar({
   workouts,
   outsideActivityDates = [],
   hideHeading = false,
+  showPhaseLegend = true,
 }: WorkoutCalendarProps) {
   const router = useRouter();
   const today = new Date();
@@ -122,6 +130,9 @@ export default function WorkoutCalendar({
           const phaseStyle = dayData
             ? PHASE_STYLES[dayData.phase] ?? null
             : null;
+          // Only name a phase in the label if it's a known cycle phase; a
+          // pregnancy row (phase "pregnancy") reads simply as "workout".
+          const phaseLabel = phaseStyle?.label ?? null;
           const isToday = key === todayKey;
           const hasWorkout = Boolean(dayData);
 
@@ -149,7 +160,9 @@ export default function WorkoutCalendar({
               className={cellClasses}
               aria-label={
                 hasWorkout
-                  ? `${date.getDate()}, ${dayData?.phase} phase workout`
+                  ? phaseLabel
+                    ? `${date.getDate()}, ${phaseLabel} phase workout`
+                    : `${date.getDate()}, workout`
                   : `${date.getDate()}, no workout`
               }
             >
@@ -182,12 +195,14 @@ export default function WorkoutCalendar({
       </div>
 
       <div className="mt-5 pt-4 border-t border-pf-border flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-pf-text-muted">
-        {Object.entries(PHASE_STYLES).map(([phase, style]) => (
-          <span key={phase} className="inline-flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${style.dot}`} />
-            {style.label}
-          </span>
-        ))}
+        {showPhaseLegend
+          ? Object.entries(PHASE_STYLES).map(([phase, style]) => (
+              <span key={phase} className="inline-flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${style.dot}`} />
+                {style.label}
+              </span>
+            ))
+          : null}
         <span className="inline-flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-pf-text-muted" />
           Outside activity

@@ -1,0 +1,75 @@
+import { describe, it, expect } from "vitest";
+import { parseGenerationParams, toGenerateApiBody } from "./generation-params";
+
+describe("parseGenerationParams — discriminated by shape", () => {
+  it("parses a cycle shape", () => {
+    const parsed = parseGenerationParams({
+      phase: "luteal",
+      energy: "low",
+      duration: 40,
+      style: "Strength training",
+      notes: "n",
+    });
+    expect(parsed).toEqual({
+      kind: "cycle",
+      params: {
+        phase: "luteal",
+        energy: "low",
+        duration: 40,
+        style: "Strength training",
+        notes: "n",
+      },
+    });
+  });
+
+  it("parses a pregnancy shape (mode + equipment), not null", () => {
+    const parsed = parseGenerationParams({
+      mode: "pregnancy",
+      duration: 30,
+      stage_key: "t2_golden",
+      gestational_week: 16,
+      equipment: ["dumbbell", "band"],
+      pool_slugs: ["a"],
+      source: "model",
+    });
+    expect(parsed).toEqual({
+      kind: "pregnancy",
+      params: { time: 30, equipment: ["dumbbell", "band"], stageKey: "t2_golden" },
+    });
+  });
+
+  it("pregnancy with no equipment/stage -> empty array + empty stageKey", () => {
+    const parsed = parseGenerationParams({ mode: "pregnancy", duration: 20 });
+    expect(parsed).toEqual({
+      kind: "pregnancy",
+      params: { time: 20, equipment: [], stageKey: "" },
+    });
+  });
+
+  it("returns null for junk / missing duration / incomplete cycle", () => {
+    expect(parseGenerationParams(null)).toBeNull();
+    expect(parseGenerationParams({})).toBeNull();
+    expect(parseGenerationParams({ duration: 0, mode: "pregnancy" })).toBeNull();
+    expect(parseGenerationParams({ phase: "luteal", duration: 40 })).toBeNull(); // no energy/style
+  });
+});
+
+describe("toGenerateApiBody — cycle body, no user_id", () => {
+  it("maps params to the API body without a user_id", () => {
+    const body = toGenerateApiBody({
+      phase: "luteal",
+      energy: "low",
+      duration: 40,
+      style: "Strength training",
+      notes: "n",
+    });
+    expect(body).toEqual({
+      phase: "luteal",
+      energy: "low",
+      time: "40",
+      style: "Strength training",
+      notes: "n",
+    });
+    expect("user_id" in body).toBe(false);
+  });
+});

@@ -10,6 +10,12 @@ import { useOnboardingGuard } from "./lib/use-onboarding-guard";
 import { getUserProfile } from "./lib/user-profile";
 import { resolvePregnancyStage } from "@/lib/stages/resolvePregnancyStage";
 import { STAGE_BAND_LABELS } from "./lib/pregnancy-display";
+import { stageOrdinal, type StageKey } from "@/lib/stages/pregnancyStages";
+import DailyCheckin from "./components/DailyCheckin";
+import PregnancyBlockedNotice from "./components/PregnancyBlockedNotice";
+import { localDateISO } from "@/lib/dates";
+import { evaluateRedFlags, type RedFlagAnswers } from "@/lib/safety/redFlags";
+import { parseGenerationParams } from "./lib/generation-params";
 
 type WorkoutRow = {
   id: string;
@@ -19,7 +25,24 @@ type WorkoutRow = {
   created_at: string;
   completed?: string | null;
   difficulty?: string | null;
+  generation_params?: unknown;
 };
+
+/**
+ * Badge label for a workout, derived from ITS OWN generation_params — never from
+ * current profile state (a historical cycle row must not get today's stage band,
+ * and a completed session's label must not drift as the pregnancy progresses).
+ * Unparseable params -> no badge.
+ */
+function workoutBadge(row: WorkoutRow): string | null {
+  const parsed = parseGenerationParams(row.generation_params);
+  if (!parsed) return null;
+  if (parsed.kind === "pregnancy") {
+    const key = parsed.params.stageKey;
+    return stageOrdinal(key) !== null ? STAGE_BAND_LABELS[key as StageKey] : null;
+  }
+  return `${parsed.params.phase} phase`;
+}
 
 function isSessionComplete(w: WorkoutRow): boolean {
   const c = (w.completed ?? "").trim().toLowerCase();
@@ -52,6 +75,23 @@ function buildAdaptiveInsight(today: WorkoutRow, prior?: WorkoutRow): string {
   }
 
   return "Adapted to your cycle phase, recovery, and recent performance";
+}
+
+/**
+ * Pregnancy home headline. Reflects what actually drove the session — stage
+ * band, prior activity baseline, today's check-in — NOT the cycle-phase copy
+ * from buildAdaptiveInsight, which is wrong (and jarring) for a pregnant user.
+ */
+function buildPregnancyInsight(band: string, activity: string | null): string {
+  const bits: string[] = [];
+  if (band) bits.push(band.toLowerCase());
+  if (activity) bits.push(`your ${activity} baseline`);
+  bits.push("today's check-in");
+  const joined =
+    bits.length === 1
+      ? bits[0]
+      : `${bits.slice(0, -1).join(", ")}, and ${bits[bits.length - 1]}`;
+  return `Adapted to ${joined}`;
 }
 
 const OUTSIDE_ACTIVITY_PRESETS = [
@@ -127,6 +167,12 @@ export default function Home() {
   const [canGenerate, setCanGenerate] = useState(false);
   const [trainingMode, setTrainingMode] = useState<string | null>(null);
   const [pregnancyScreening, setPregnancyScreening] = useState<string | null>(null);
+  const [pregnancyActivity, setPregnancyActivity] = useState<string | null>(null);
+  // Daily check-in status (pregnancy only). 'needed' -> render the check-in;
+  // 'blocked' -> render the neutral rest card; 'clear' -> generation allowed.
+  const [checkinStatus, setCheckinStatus] = useState<
+    "loading" | "needed" | "blocked" | "clear"
+  >("loading");
 
   const [showOutsideModal, setShowOutsideModal] = useState(false);
   const [outsideActivity, setOutsideActivity] = useState("");
@@ -166,7 +212,9 @@ export default function Home() {
       alert("Select intensity.");
       return;
     }
-    if (!isKnownCyclePhase(outsideCyclePhase)) {
+    // Cycle phase is a cycle-mode concept. Pregnancy stores null (the column is
+    // nullable and cycle_phase is write-only — nothing reads it).
+    if (trainingMode !== "pregnancy" && !isKnownCyclePhase(outsideCyclePhase)) {
       alert("Select your cycle phase.");
       return;
     }
@@ -178,7 +226,7 @@ export default function Home() {
       activity_type: activity,
       duration_minutes: Math.round(duration),
       intensity: outsideIntensity,
-      cycle_phase: outsideCyclePhase,
+      cycle_phase: trainingMode === "pregnancy" ? null : outsideCyclePhase,
       notes: outsideNotes.trim() || null,
     });
 
@@ -230,21 +278,44 @@ export default function Home() {
         // Own screening rows are readable via RLS.
         const { data: row } = await supabase
           .from("pregnancy_screening")
-          .select("screening_result")
+          .select("screening_result, prior_activity_level")
           .eq("user_id", data.user.id)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
         const result = (row?.screening_result as string) ?? null;
         setPregnancyScreening(result);
-        setCanGenerate(result === "clear");
+        setPregnancyActivity((row?.prior_activity_level as string | null) ?? null);
+
+        // Daily check-in gate — only once screening is clear. Fail closed for
+        // the CTA: a read error or no row -> check-in needed, never the button.
+        if (result === "clear") {
+          const today = localDateISO(new Date());
+          const { data: ci, error: ciErr } = await supabase
+            .from("daily_checkins")
+            .select("red_flags")
+            .eq("user_id", data.user.id)
+            .eq("date", today)
+            .maybeSingle();
+          if (ciErr || !ci) {
+            setCheckinStatus("needed");
+            setCanGenerate(false);
+          } else {
+            const answers = (ci.red_flags as { answers?: unknown } | null)?.answers;
+            const blocked = evaluateRedFlags(answers as RedFlagAnswers).blocked;
+            setCheckinStatus(blocked ? "blocked" : "clear");
+            setCanGenerate(!blocked);
+          }
+        } else {
+          setCanGenerate(false);
+        }
       }
 
       const [workoutsRes, outsideRes] = await Promise.all([
         supabase
           .from("workouts")
           .select(
-            "id, workout, phase, intensity, created_at, completed, difficulty"
+            "id, workout, phase, intensity, created_at, completed, difficulty, generation_params"
           )
           .eq("user_id", data.user.id)
           .neq("completed", "cancelled")
@@ -288,18 +359,26 @@ export default function Home() {
 
   const insight =
     heroWorkout != null
-      ? buildAdaptiveInsight(heroWorkout, priorWorkout)
+      ? trainingMode === "pregnancy"
+        ? buildPregnancyInsight(pregnancy?.band ?? "", pregnancyActivity)
+        : buildAdaptiveInsight(heroWorkout, priorWorkout)
       : null;
 
   const heroHeadline =
     insight ??
     (heroWorkout
       ? "Your session is ready when you are"
-      : "Train smarter through every phase");
+      : trainingMode === "pregnancy"
+        ? "Training that adapts to your pregnancy"
+        : "Train smarter through every phase");
 
   const heroSubcopy = heroWorkout
-    ? "Personalized to your cycle, recovery, and recent performance"
-    : "Adaptive coaching that meets you where you are today";
+    ? trainingMode === "pregnancy"
+      ? "Personalized to your stage, prior activity, and today's check-in"
+      : "Personalized to your cycle, recovery, and recent performance"
+    : trainingMode === "pregnancy"
+      ? "Adaptive coaching for a safe, active pregnancy"
+      : "Adaptive coaching that meets you where you are today";
 
   if (loading || !onboardingReady) {
     return (
@@ -367,7 +446,22 @@ export default function Home() {
           </h2>
 
           <div className="mt-6 space-y-5">
-            {!canGenerate ? (
+            {trainingMode === "pregnancy" &&
+            pregnancyScreening === "clear" &&
+            checkinStatus === "needed" ? (
+              /* Screening clear but no check-in today: the check-in is the gate.
+                 No generate CTA until it's submitted. */
+              <DailyCheckin
+                onComplete={(blocked) => {
+                  setCheckinStatus(blocked ? "blocked" : "clear");
+                  setCanGenerate(!blocked);
+                }}
+              />
+            ) : trainingMode === "pregnancy" && checkinStatus === "blocked" ? (
+              /* Neutral: no diagnosis, no speculation, no listing which flag
+                 fired. Same copy as /generate (shared component). */
+              <PregnancyBlockedNotice />
+            ) : !canGenerate ? (
               /* Fail closed: the generate CTA shows only for a confirmed
                  generatable state. Pregnancy gets screening-specific copy;
                  anything unconfirmed -> a neutral message. Never the button. */
@@ -386,9 +480,11 @@ export default function Home() {
                   <p className="text-xl sm:text-2xl font-bold text-pf-text font-[family-name:var(--font-barlow-condensed)] uppercase tracking-wide leading-tight">
                     {heroWorkout.workout}
                   </p>
-                  <span className="pf-badge capitalize inline-block">
-                    {heroWorkout.phase} phase
-                  </span>
+                  {workoutBadge(heroWorkout) ? (
+                    <span className="pf-badge capitalize inline-block">
+                      {workoutBadge(heroWorkout)}
+                    </span>
+                  ) : null}
                 </div>
 
                 {heroShowsCompletedOnly ? (
@@ -526,27 +622,29 @@ export default function Home() {
                 </select>
               </div>
 
-              <fieldset className="border-0 p-0 m-0">
-                <legend className="pf-label mb-2">Cycle phase</legend>
-                <div className="pf-radio-group" role="radiogroup" aria-label="Cycle phase">
-                  {CYCLE_PHASE_OPTIONS.map((option) => (
-                    <label
-                      key={option.value}
-                      className="pf-radio-option"
-                    >
-                      <input
-                        type="radio"
-                        name="outside-cycle-phase"
-                        value={option.value}
-                        checked={outsideCyclePhase === option.value}
-                        onChange={() => setOutsideCyclePhase(option.value)}
-                        className="pf-radio-input"
-                      />
-                      <span>{option.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+              {trainingMode !== "pregnancy" ? (
+                <fieldset className="border-0 p-0 m-0">
+                  <legend className="pf-label mb-2">Cycle phase</legend>
+                  <div className="pf-radio-group" role="radiogroup" aria-label="Cycle phase">
+                    {CYCLE_PHASE_OPTIONS.map((option) => (
+                      <label
+                        key={option.value}
+                        className="pf-radio-option"
+                      >
+                        <input
+                          type="radio"
+                          name="outside-cycle-phase"
+                          value={option.value}
+                          checked={outsideCyclePhase === option.value}
+                          onChange={() => setOutsideCyclePhase(option.value)}
+                          className="pf-radio-input"
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ) : null}
 
               <div>
                 <label className="pf-label">Notes (optional)</label>
@@ -579,7 +677,9 @@ export default function Home() {
               Training Timeline
             </h2>
             <p className="mt-1.5 pf-body-muted text-[0.8125rem]">
-              Sessions and outside activity mapped to your cycle
+              {trainingMode === "pregnancy"
+                ? "Your sessions and activity over time"
+                : "Sessions and outside activity mapped to your cycle"}
             </p>
           </div>
 
@@ -587,6 +687,7 @@ export default function Home() {
             workouts={workouts}
             outsideActivityDates={outsideActivityDates}
             hideHeading
+            showPhaseLegend={trainingMode !== "pregnancy"}
           />
         </section>
 

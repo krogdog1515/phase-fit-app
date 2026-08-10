@@ -14,7 +14,7 @@ export default function GeneratePage() {
       <DashboardHero
         eyebrow="Workout builder"
         title="Build Today's Training Session"
-        description="Your session adapts to cycle phase, recovery, energy, and training goals — built for how you feel today."
+        description="Your session adapts to how you feel today — your recovery, energy, and goals."
         ariaLabel="Workout builder"
       />
 
