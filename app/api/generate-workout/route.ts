@@ -25,8 +25,16 @@ import {
   buildCannedSession,
   resolveStructure,
   loadedFloorFor,
+  isLoadedMovement,
   type PregnancyStructureItem,
+  type PregnancyContext,
 } from "../../lib/pregnancy-prompts";
+import {
+  filterByFocus,
+  isFocusKey,
+  FOCUS_LABELS,
+  type FocusKey,
+} from "@/lib/movements/focusGroups";
 import { getIntensityCap } from "@/lib/stages/pregnancyStages";
 import { evaluateRedFlags, type RedFlagAnswers } from "@/lib/safety/redFlags";
 import { isAcceptableClientDate } from "@/lib/dates";
@@ -227,6 +235,7 @@ export async function POST(req: Request) {
         time,
         equipment,
         date,
+        focus: body.focus,
         stageAnchorDate: modeProfile.stage_anchor_date,
       });
     }
@@ -406,6 +415,7 @@ async function handlePregnancyGeneration(opts: {
   time: unknown;
   equipment: unknown;
   date: unknown;
+  focus: unknown;
   stageAnchorDate: string | null;
 }): Promise<Response> {
   const { user_id, stageAnchorDate } = opts;
@@ -523,21 +533,66 @@ async function handlePregnancyGeneration(opts: {
     return NextResponse.json({ error: "Could not load movements" }, { status: 500 });
   }
   const byStage = filterMovementsByStage((allMovements ?? []) as Movement[], stage.stageKey);
-  const pool = filterByEquipment(byStage, equipmentList);
-  if (pool.length === 0) {
+  const fullPool = filterByEquipment(byStage, equipmentList);
+  if (fullPool.length === 0) {
+    // Equipment, not focus — an empty equipment-filtered pool still blocks.
     return NextResponse.json(
       { error: "No stage-appropriate movements match the selected equipment." },
       { status: 409 }
     );
   }
 
+  const cap = getIntensityCap(stage.stageKey);
+  const priorActivity = (screening.prior_activity_level as string | null) ?? null;
+
+  // 4b. Focus is a PREFERENCE, never a gate — it NEVER 409s. Narrow the pool only
+  //     if the narrowed pool still meets the band's strength floors as a filter;
+  //     otherwise fall back to the full pool and pass the focus to the model as a
+  //     strong preference. For cardio / mobility_recovery the strength + loaded
+  //     floors are relaxed to 0 for this request (a preference floor, not a safety
+  //     one — rpe/rir/stage/exclusion gates are untouched) so those focuses can
+  //     actually be delivered as filters.
+  const focusKey: FocusKey = isFocusKey(opts.focus) ? opts.focus : "full_body";
+  let pool = fullPool;
+  let focusContext: PregnancyContext["focus"] = {
+    label: FOCUS_LABELS[focusKey],
+    mode: "none",
+  };
+  let focusFallback = false;
+  let focusFloorRelaxed = false;
+
+  if (focusKey !== "full_body") {
+    const relax = focusKey === "cardio" || focusKey === "mobility_recovery";
+    const focusPool = filterByFocus(fullPool, focusKey);
+    const strengthMin = relax ? 0 : cap.strengthMovementTarget[0];
+    const loadedExpectation = relax ? 0 : loadedFloorFor(fullPool, cap, priorActivity);
+    const focusStrength = focusPool.filter((m) => m.category === "strength").length;
+    const focusLoaded = focusPool.filter(isLoadedMovement).length;
+    const satisfies =
+      focusPool.length > 0 &&
+      focusStrength >= strengthMin &&
+      focusLoaded >= loadedExpectation;
+
+    if (satisfies) {
+      pool = focusPool;
+      focusFloorRelaxed = relax;
+      focusContext = {
+        label: FOCUS_LABELS[focusKey],
+        mode: "filter",
+        relaxStrengthFloor: relax,
+      };
+    } else {
+      focusFallback = true;
+      focusContext = { label: FOCUS_LABELS[focusKey], mode: "preference" };
+    }
+  }
+
   const poolSlugs = new Set(pool.map((m) => m.slug));
   const poolBySlug = new Map(pool.map((m) => [m.slug, m]));
 
-  // Loaded-movement floor for this band + activity level, clamped to the pool.
-  const cap = getIntensityCap(stage.stageKey);
-  const priorActivity = (screening.prior_activity_level as string | null) ?? null;
-  const loadedFloor = loadedFloorFor(pool, cap, priorActivity);
+  // Loaded-movement floor for validation, clamped to the pool. Relaxed focuses
+  // carry no loaded floor (kept consistent with the prompt).
+  const loadedFloor = focusFloorRelaxed ? 0 : loadedFloorFor(pool, cap, priorActivity);
 
   // 5. Constrained generation with one retry, then a deterministic fallback.
   const systemPrompt = buildPregnancySystemPrompt();
@@ -546,6 +601,7 @@ async function handlePregnancyGeneration(opts: {
     gestationalWeek: stage.gestationalWeek,
     time: duration,
     priorActivityLevel: priorActivity,
+    focus: focusContext,
   });
 
   let structure: PregnancyStructureItem[] | null = null;
@@ -594,6 +650,7 @@ async function handlePregnancyGeneration(opts: {
         gestationalWeek: stage.gestationalWeek,
         time: duration,
         priorActivityLevel: priorActivity,
+        focus: focusContext,
       },
     });
     structure = canned.structure;
@@ -627,6 +684,10 @@ async function handlePregnancyGeneration(opts: {
       equipment: equipmentList,
       pool_slugs: [...poolSlugs],
       source,
+      // Focus is the picker key (distinct from `workout`, the session title).
+      focus: focusKey,
+      focus_fallback: focusFallback,
+      focus_floor_relaxed: focusFloorRelaxed,
     },
   };
 

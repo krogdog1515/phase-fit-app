@@ -43,6 +43,8 @@ export function buildPregnancyCoachingDisplay(input: {
   gestationalWeek: number;
   priorActivityLevel?: string | null;
   recentSessionCount?: number;
+  /** Requested workout focus + whether it fell back to the full pool. */
+  focus?: { label: string; fallback: boolean } | null;
 }): CoachingDisplay {
   const cap = getIntensityCap(input.stageKey);
   const bandLabel = STAGE_BAND_LABELS[input.stageKey] ?? input.stageKey;
@@ -55,6 +57,13 @@ export function buildPregnancyCoachingDisplay(input: {
   if (input.recentSessionCount && input.recentSessionCount > 0) {
     const n = input.recentSessionCount;
     noticed.push(`Building on your last ${n} session${n === 1 ? "" : "s"}.`);
+  }
+  // Focus fell back to the full pool (couldn't meet the strength floors as a
+  // filter) — say so rather than silently ignoring what she asked for.
+  if (input.focus?.fallback) {
+    noticed.push(
+      `You asked for ${input.focus.label.toLowerCase()} — with the equipment you have today I've built around it rather than limiting to it.`,
+    );
   }
 
   const [repMin, repMax] = cap.repRange;

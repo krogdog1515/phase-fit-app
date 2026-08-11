@@ -14,6 +14,13 @@ import {
   type CheckinStatus,
 } from "../lib/pregnancy-generate-gate";
 import PregnancyBlockedNotice from "../components/PregnancyBlockedNotice";
+import { FOCUS_OPTIONS, FOCUS_LABELS, type FocusKey } from "@/lib/movements/focusGroups";
+
+// No HIIT / high-intensity focus option: the band intensityCap sets an RPE
+// ceiling of 7 in T1 with a rirFloor of 3, and interval work at intensity
+// contradicts that. Guidelines recommend high-intensity in pregnancy only in a
+// monitored environment, and there is no HIIT content in the library — offering
+// an option the generator can't deliver is worse than not offering it.
 
 // Grouped so chair/wall aren't an easy accidental omission — unchecking them
 // silently removes real movements (e.g. the only squat depends on a chair).
@@ -74,7 +81,8 @@ export default function GenerateWorkoutClient() {
   const [workoutStyle, setWorkoutStyle] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Pregnancy inputs (simplified form): session length + equipment on hand.
+  // Pregnancy inputs (simplified form): focus + session length + equipment.
+  const [focus, setFocus] = useState<FocusKey>("full_body");
   const [equipment, setEquipment] = useState<string[]>(DEFAULT_EQUIPMENT);
 
   useEffect(() => {
@@ -175,7 +183,7 @@ export default function GenerateWorkoutClient() {
           Authorization: `Bearer ${token}`,
         },
         // date: client-local "today" for the daily check-in gate.
-        body: JSON.stringify({ time, equipment, date: localDateISO(new Date()) }),
+        body: JSON.stringify({ time, equipment, focus, date: localDateISO(new Date()) }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -301,6 +309,24 @@ export default function GenerateWorkoutClient() {
           </h2>
 
           <div className="mt-6">
+            <div className="pf-form-section">
+              <h3 className="pf-form-section-title">Focus</h3>
+              <p className="pf-form-section-hint">What would you like to work on?</p>
+              <label className="pf-label sr-only" htmlFor="preg-focus">Focus</label>
+              <select
+                id="preg-focus"
+                value={focus}
+                onChange={(e) => setFocus(e.target.value as FocusKey)}
+                className="pf-select"
+              >
+                {FOCUS_OPTIONS.map((k) => (
+                  <option key={k} value={k}>
+                    {FOCUS_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="pf-form-section">
               <h3 className="pf-form-section-title">Available Time</h3>
               <p className="pf-form-section-hint">How long can you train right now?</p>

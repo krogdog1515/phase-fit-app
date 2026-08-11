@@ -46,6 +46,19 @@ describe("parseGenerationParams — discriminated by shape", () => {
     });
   });
 
+  it("extracts focus so regenerate can carry it forward", () => {
+    const parsed = parseGenerationParams({
+      mode: "pregnancy",
+      duration: 30,
+      stage_key: "t2_golden",
+      gestational_week: 16,
+      equipment: [],
+      focus: "upper_body",
+    });
+    expect(parsed?.kind).toBe("pregnancy");
+    if (parsed?.kind === "pregnancy") expect(parsed.params.focus).toBe("upper_body");
+  });
+
   it("returns null for junk / missing duration / incomplete cycle", () => {
     expect(parseGenerationParams(null)).toBeNull();
     expect(parseGenerationParams({})).toBeNull();

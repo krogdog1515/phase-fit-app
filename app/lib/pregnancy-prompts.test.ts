@@ -180,6 +180,38 @@ describe("prompt content", () => {
     // coachingRationale is vetted text; the model reads it, so it must appear verbatim.
     expect(msg).toContain(cap.coachingRationale.slice(0, 50));
   });
+
+  it("focus 'filter' mode announces the focus", () => {
+    const msg = buildPregnancyUserMessage(POOL, {
+      stageKey: "t1_early",
+      gestationalWeek: 8,
+      time: 40,
+      focus: { label: "Upper body", mode: "filter" },
+    });
+    expect(msg).toContain("focused on Upper body");
+  });
+
+  it("focus 'preference' mode adds a non-filter preference that keeps mandated work", () => {
+    const msg = buildPregnancyUserMessage(POOL, {
+      stageKey: "t1_early",
+      gestationalWeek: 8,
+      time: 40,
+      focus: { label: "Upper body", mode: "preference" },
+    });
+    expect(msg).toContain("strong preference, not a filter");
+    expect(msg).toContain("do NOT drop the mandated");
+  });
+
+  it("relaxed strength floor (cardio/mobility filter) makes strength optional, no minimum", () => {
+    const msg = buildPregnancyUserMessage(POOL, {
+      stageKey: "t1_early",
+      gestationalWeek: 8,
+      time: 40,
+      focus: { label: "Cardio", mode: "filter", relaxStrengthFloor: true },
+    });
+    expect(msg).toContain("OPTIONAL this session");
+    expect(msg).not.toContain("Include between");
+  });
 });
 
 describe("buildCannedSession — deterministic strength floor from the band cap", () => {

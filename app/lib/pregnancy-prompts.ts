@@ -29,6 +29,20 @@ export type PregnancyContext = {
   time: number;
   /** Prior activity level (sedentary|light|active|athlete), for coaching context. */
   priorActivityLevel?: string | null;
+  /**
+   * Workout-focus context. `mode`:
+   *  - 'filter': the pool is already narrowed to this focus (tell the model so);
+   *  - 'preference': the pool is full but the focus is a strong preference;
+   *  - 'none': full-body / no focus.
+   * `relaxStrengthFloor` is set for cardio/mobility filter runs, where the user's
+   * explicit choice lifts the strength/loaded minimums (a preference floor, not a
+   * safety one) so the focus can actually be delivered.
+   */
+  focus?: {
+    label: string;
+    mode: "filter" | "preference" | "none";
+    relaxStrengthFloor?: boolean;
+  };
 };
 
 /**
@@ -161,15 +175,28 @@ export function loadedFloorFor(
 }
 
 /** The band's vetted training prescription, rendered as hard prompt constraints. */
-function prescriptionBlock(cap: IntensityCap, loadedFloor: number): string {
+function prescriptionBlock(
+  cap: IntensityCap,
+  loadedFloor: number,
+  relaxStrength?: { label: string },
+): string {
   const [strMin, strMax] = cap.strengthMovementTarget;
   const [setMin, setMax] = cap.setsPerMovement;
   const [repMin, repMax] = cap.repRange;
-  const lines = [
-    "TRAINING PRESCRIPTION — HARD CONSTRAINTS (do not exceed):",
-    `- Include between ${strMin} and ${strMax} strength-category movements. This is a real training`,
-    "  session, not a mobility flow — do not default to gentleness.",
-  ];
+  const lines = ["TRAINING PRESCRIPTION — HARD CONSTRAINTS (do not exceed):"];
+  if (relaxStrength) {
+    // Cardio / mobility focus: the user's explicit choice lifts the strength
+    // minimum. Strength is optional this session; the RPE/RIR ceilings still hold.
+    lines.push(
+      `- The client chose a ${relaxStrength.label} focus. Build around that; strength-category`,
+      "  movements are OPTIONAL this session (no strength minimum).",
+    );
+  } else {
+    lines.push(
+      `- Include between ${strMin} and ${strMax} strength-category movements. This is a real training`,
+      "  session, not a mobility flow — do not default to gentleness.",
+    );
+  }
   if (loadedFloor > 0) {
     lines.push(
       `- At least ${loadedFloor} of those strength movements MUST be loaded (use a dumbbell or band).`,
@@ -192,11 +219,22 @@ export function buildPregnancyUserMessage(
 ): string {
   const band = STAGE_BAND_LABELS[ctx.stageKey] ?? ctx.stageKey;
   const cap = getIntensityCap(ctx.stageKey);
-  const loadedFloor = loadedFloorFor(candidates, cap, ctx.priorActivityLevel);
+  const relax = ctx.focus?.relaxStrengthFloor === true;
+  const loadedFloor = relax ? 0 : loadedFloorFor(candidates, cap, ctx.priorActivityLevel);
   const list = candidates.map(candidateLine).join("\n");
   const activity = ctx.priorActivityLevel
     ? `\n- Prior activity level: ${ctx.priorActivityLevel} (tune volume/intensity to this — do not patronize an active client, do not overload a sedentary one)`
     : "";
+
+  // Focus line. 'filter': pool is already narrowed. 'preference': full pool, but
+  // emphasize the focus without dropping the mandated work.
+  let focusLine = "";
+  if (ctx.focus?.mode === "filter") {
+    focusLine = `\n\nThis session is focused on ${ctx.focus.label}.`;
+  } else if (ctx.focus?.mode === "preference") {
+    focusLine = `\n\nWORKOUT FOCUS (strong preference, not a filter): emphasize ${ctx.focus.label} movements where the session allows; do NOT drop the mandated strength/pelvic-floor work.`;
+  }
+
   return `
 Client context (for coaching voice and dosage only):
 - Stage: ${band}
@@ -207,7 +245,7 @@ WHY TODAY LOOKS THE WAY IT DOES (vetted — you may quote or paraphrase this, bu
 NOT add your own physiological claims):
 ${cap.coachingRationale}
 
-${prescriptionBlock(cap, loadedFloor)}
+${prescriptionBlock(cap, loadedFloor, relax ? { label: ctx.focus?.label ?? "this" } : undefined)}${focusLine}
 
 CANDIDATE LIST — select and sequence from these ONLY, by slug:
 ${list}

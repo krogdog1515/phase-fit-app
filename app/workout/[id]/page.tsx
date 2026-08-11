@@ -12,6 +12,7 @@ import {
 import MovementProgressionBlock from "../../components/MovementProgressionBlock";
 import CoachingCard from "../../components/CoachingCard";
 import { buildPregnancyCoachingDisplay } from "../../lib/pregnancy-display";
+import { FOCUS_LABELS, isFocusKey } from "@/lib/movements/focusGroups";
 import { localDateISO } from "@/lib/dates";
 import {
   getIntensityCap,
@@ -266,6 +267,16 @@ export default function WorkoutPage() {
       ? pregParams.prior_activity_level
       : null;
   const pregCap = isPregnancy && pregStageKey ? getIntensityCap(pregStageKey) : null;
+  // Requested focus + whether it fell back to the full pool, for the WHAT I
+  // NOTICED notice. full_body is never surfaced (it's the default, no fallback).
+  const pregFocusKey =
+    typeof pregParams.focus === "string" && isFocusKey(pregParams.focus)
+      ? pregParams.focus
+      : null;
+  const pregFocus =
+    pregFocusKey && pregFocusKey !== "full_body"
+      ? { label: FOCUS_LABELS[pregFocusKey], fallback: pregParams.focus_fallback === true }
+      : null;
   const pregnancyCoaching =
     isPregnancy && pregStageKey && Number.isFinite(pregWeek)
       ? buildPregnancyCoachingDisplay({
@@ -273,6 +284,7 @@ export default function WorkoutPage() {
           gestationalWeek: pregWeek,
           priorActivityLevel: pregActivity,
           recentSessionCount,
+          focus: pregFocus,
         })
       : null;
 
@@ -650,6 +662,7 @@ export default function WorkoutPage() {
               time: parsedParams.params.time,
               equipment: parsedParams.params.equipment,
               date: localDateISO(new Date()),
+              focus: parsedParams.params.focus,
             }
           : toGenerateApiBody(parsedParams.params);
 
