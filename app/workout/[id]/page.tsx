@@ -13,6 +13,8 @@ import MovementProgressionBlock from "../../components/MovementProgressionBlock"
 import CoachingCard from "../../components/CoachingCard";
 import { buildPregnancyCoachingDisplay } from "../../lib/pregnancy-display";
 import { FOCUS_LABELS, isFocusKey } from "@/lib/movements/focusGroups";
+import { youtubeEmbedUrl } from "@/lib/movements/youtube";
+import MovementVideo from "../../components/MovementVideo";
 import { localDateISO } from "@/lib/dates";
 import {
   getIntensityCap,
@@ -50,6 +52,22 @@ type MovementState = {
   // Movement category. Drives set-logging vs duration display (see isSetLogged).
   // "" for cycle workouts, whose movements are always set-logged.
   category: string;
+  // Movement slug (pregnancy only; "" for cycle). Keys the live movements-table
+  // lookup for benefit / modifications / video.
+  slug: string;
+};
+
+/**
+ * Per-movement vetted content, fetched LIVE from the movements table by slug
+ * (the stored structure doesn't carry it, and live-fetch means re-seeded video
+ * URLs land on existing workouts). benefit + modifications are VETTED TEXT shown
+ * verbatim — the model never generates, paraphrases, or summarises them (same
+ * boundary as the band's coachingRationale).
+ */
+type MovementMeta = {
+  benefit: string | null;
+  modifications: string | null;
+  media_url: string | null;
 };
 
 /**
@@ -225,6 +243,7 @@ export default function WorkoutPage() {
 
   const [workout, setWorkout] = useState<WorkoutRow | null>(null);
   const [movements, setMovements] = useState<MovementState[]>([]);
+  const [movementMeta, setMovementMeta] = useState<Record<string, MovementMeta>>({});
   const [flowBlocks, setFlowBlocks] = useState<FlowBlock[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
 
@@ -352,6 +371,7 @@ export default function WorkoutPage() {
             durationSeconds: Number(item.durationSeconds) || 0,
             intensity: String(item.intensity ?? ""),
             category: String(item.category ?? ""),
+            slug: String(item.slug ?? ""),
           }));
 
           const logs = logsRaw as WorkoutLogRow[];
@@ -360,6 +380,28 @@ export default function WorkoutPage() {
               ? mergeSavedLogsIntoMovements(structureItems, initialized, logs)
               : initialized
           );
+
+          // Live-fetch vetted per-movement content (benefit / modifications /
+          // video) by slug — pregnancy only; the stored structure doesn't carry
+          // it, and live means re-seeded video URLs appear on old workouts too.
+          const slugs = initialized.map((mv) => mv.slug).filter(Boolean);
+          if (data?.phase === "pregnancy" && slugs.length > 0) {
+            const { data: metaRows } = await supabase
+              .from("movements")
+              .select("slug, benefit, modifications, media_url")
+              .in("slug", slugs);
+            if (metaRows) {
+              const map: Record<string, MovementMeta> = {};
+              for (const r of metaRows as Array<Record<string, unknown>>) {
+                map[String(r.slug)] = {
+                  benefit: (r.benefit as string | null) ?? null,
+                  modifications: (r.modifications as string | null) ?? null,
+                  media_url: (r.media_url as string | null) ?? null,
+                };
+              }
+              setMovementMeta(map);
+            }
+          }
 
           const userId = data?.user_id as string | undefined;
           const phase = data?.phase as string | undefined;
@@ -661,6 +703,8 @@ export default function WorkoutPage() {
           ? {
               time: parsedParams.params.time,
               equipment: parsedParams.params.equipment,
+              equipmentPreset: parsedParams.params.equipmentPreset,
+              notes: parsedParams.params.notes,
               date: localDateISO(new Date()),
               focus: parsedParams.params.focus,
             }
@@ -762,6 +806,9 @@ export default function WorkoutPage() {
             );
             // Category, not mode, decides logging vs duration display.
             const setLogged = isSetLogged(item.category);
+            // Vetted per-movement content (pregnancy only), fetched live by slug.
+            const meta = isPregnancy ? movementMeta[item.slug] : undefined;
+            const embedUrl = youtubeEmbedUrl(meta?.media_url ?? null);
 
             return (
             <div
@@ -848,6 +895,36 @@ export default function WorkoutPage() {
 
               {movementErrors[i] ? (
                 <p className="text-sm text-pf-coral">{movementErrors[i]}</p>
+              ) : null}
+
+              {/* Vetted per-movement content (pregnancy). benefit + modifications
+                  are shown VERBATIM — the model never authors them. */}
+              {isPregnancy && (meta?.benefit || meta?.modifications || embedUrl) ? (
+                <div className="space-y-3 border-t border-pf-border pt-3">
+                  {meta?.benefit ? (
+                    <p className="text-sm text-pf-text-secondary leading-relaxed">
+                      {meta.benefit}
+                    </p>
+                  ) : null}
+                  {meta?.modifications ? (
+                    <div className="space-y-1">
+                      <p className="pf-form-section-title">If it doesn&apos;t feel right</p>
+                      <p className="text-sm text-pf-text-secondary leading-relaxed">
+                        {meta.modifications}
+                      </p>
+                    </div>
+                  ) : null}
+                  <MovementVideo
+                    embedUrl={embedUrl}
+                    onReportBroken={() => {
+                      if (workout?.user_id) {
+                        logEvent(workout.user_id, "pregnancy_video_broken", {
+                          slug: item.slug,
+                        });
+                      }
+                    }}
+                  />
+                </div>
               ) : null}
 
               <textarea

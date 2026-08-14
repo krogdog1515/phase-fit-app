@@ -59,6 +59,23 @@ describe("parseGenerationParams — discriminated by shape", () => {
     if (parsed?.kind === "pregnancy") expect(parsed.params.focus).toBe("upper_body");
   });
 
+  it("extracts equipment_preset and notes for regenerate", () => {
+    const parsed = parseGenerationParams({
+      mode: "pregnancy",
+      duration: 30,
+      stage_key: "t2_golden",
+      gestational_week: 16,
+      equipment: ["chair", "wall", "dumbbell"],
+      equipment_preset: "dumbbells_only",
+      notes: "prefer upper body",
+    });
+    expect(parsed?.kind).toBe("pregnancy");
+    if (parsed?.kind === "pregnancy") {
+      expect(parsed.params.equipmentPreset).toBe("dumbbells_only");
+      expect(parsed.params.notes).toBe("prefer upper body");
+    }
+  });
+
   it("returns null for junk / missing duration / incomplete cycle", () => {
     expect(parseGenerationParams(null)).toBeNull();
     expect(parseGenerationParams({})).toBeNull();

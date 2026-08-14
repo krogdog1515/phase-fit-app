@@ -15,6 +15,13 @@ import {
 } from "../lib/pregnancy-generate-gate";
 import PregnancyBlockedNotice from "../components/PregnancyBlockedNotice";
 import { FOCUS_OPTIONS, FOCUS_LABELS, type FocusKey } from "@/lib/movements/focusGroups";
+import {
+  EQUIPMENT_PRESET_OPTIONS,
+  EQUIPMENT_PRESET_LABELS,
+  DEFAULT_EQUIPMENT_PRESET,
+  resolveEquipmentPreset,
+  type EquipmentPresetKey,
+} from "@/lib/movements/equipmentPresets";
 
 // No HIIT / high-intensity focus option: the band intensityCap sets an RPE
 // ceiling of 7 in T1 with a rirFloor of 3, and interval work at intensity
@@ -22,19 +29,7 @@ import { FOCUS_OPTIONS, FOCUS_LABELS, type FocusKey } from "@/lib/movements/focu
 // monitored environment, and there is no HIIT content in the library — offering
 // an option the generator can't deliver is worse than not offering it.
 
-// Grouped so chair/wall aren't an easy accidental omission — unchecking them
-// silently removes real movements (e.g. the only squat depends on a chair).
-const COMMON_EQUIPMENT: Array<{ value: string; label: string }> = [
-  { value: "chair", label: "Chair" },
-  { value: "wall", label: "Wall" },
-];
-const OPTIONAL_EQUIPMENT: Array<{ value: string; label: string }> = [
-  { value: "band", label: "Resistance band" },
-  { value: "dumbbell", label: "Dumbbell" },
-  { value: "bench", label: "Bench" },
-];
-// Chair + wall default to checked — nearly everyone has them.
-const DEFAULT_EQUIPMENT = ["chair", "wall"];
+const PREG_NOTES_MAX = 500;
 
 /** Bearer token for the API. The route derives the user from it, not the body. */
 async function getAccessToken(): Promise<string | null> {
@@ -81,9 +76,17 @@ export default function GenerateWorkoutClient() {
   const [workoutStyle, setWorkoutStyle] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Pregnancy inputs (simplified form): focus + session length + equipment.
+  // Pregnancy inputs (simplified form): focus + session length + equipment preset
+  // + optional notes.
   const [focus, setFocus] = useState<FocusKey>("full_body");
-  const [equipment, setEquipment] = useState<string[]>(DEFAULT_EQUIPMENT);
+  const [equipmentPreset, setEquipmentPreset] =
+    useState<EquipmentPresetKey>(DEFAULT_EQUIPMENT_PRESET);
+  // HARD BOUNDARY: pregnancy session notes. This text is passed to the prompt for
+  // coaching voice and selection PREFERENCE only. It must NEVER influence a safety
+  // decision, never relax a gate, and never override the movement pool — same
+  // boundary as pregnancy_screening q4_detail. Gating comes from screening_result,
+  // the daily check-in, and the stage filter, nothing else.
+  const [pregNotes, setPregNotes] = useState("");
 
   useEffect(() => {
     if (!onboardingReady) return;
@@ -121,12 +124,6 @@ export default function GenerateWorkoutClient() {
 
     init();
   }, [router, onboardingReady]);
-
-  const toggleEquipment = (value: string) => {
-    setEquipment((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
-    );
-  };
 
   const generateCycle = async () => {
     if (!phase || !energy || !time || !workoutStyle) {
@@ -183,7 +180,14 @@ export default function GenerateWorkoutClient() {
           Authorization: `Bearer ${token}`,
         },
         // date: client-local "today" for the daily check-in gate.
-        body: JSON.stringify({ time, equipment, focus, date: localDateISO(new Date()) }),
+        body: JSON.stringify({
+          time,
+          focus,
+          equipmentPreset,
+          equipment: resolveEquipmentPreset(equipmentPreset),
+          notes: pregNotes,
+          date: localDateISO(new Date()),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -348,39 +352,39 @@ export default function GenerateWorkoutClient() {
 
             <div className="pf-form-section">
               <h3 className="pf-form-section-title">Equipment available</h3>
-              <p className="pf-form-section-hint">
-                Bodyweight movements are always included. Uncheck anything you don&apos;t have.
+              <p className="pf-form-section-hint">What do you have on hand today?</p>
+              <label className="pf-label sr-only" htmlFor="preg-equipment">Equipment</label>
+              <select
+                id="preg-equipment"
+                value={equipmentPreset}
+                onChange={(e) => setEquipmentPreset(e.target.value as EquipmentPresetKey)}
+                className="pf-select"
+              >
+                {EQUIPMENT_PRESET_OPTIONS.map((k) => (
+                  <option key={k} value={k}>
+                    {EQUIPMENT_PRESET_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="pf-form-divider" />
+
+            <div className="pf-form-section">
+              <h3 className="pf-form-section-title">Notes</h3>
+              <label className="pf-label sr-only" htmlFor="preg-notes">Session notes</label>
+              <textarea
+                id="preg-notes"
+                value={pregNotes}
+                onChange={(e) => setPregNotes(e.target.value.slice(0, PREG_NOTES_MAX))}
+                maxLength={PREG_NOTES_MAX}
+                rows={3}
+                placeholder="Anything about today's session — equipment, how you're feeling, what you want to work on."
+                className="pf-textarea"
+              />
+              <p className="pf-form-section-hint mt-1">
+                For training context. If something feels wrong, use the daily check-in.
               </p>
-
-              <p className="pf-label mt-1 mb-1">Almost everyone has these</p>
-              <div className="pf-radio-group" role="group" aria-label="Common equipment">
-                {COMMON_EQUIPMENT.map((opt) => (
-                  <label key={opt.value} className="pf-radio-option">
-                    <input
-                      type="checkbox"
-                      checked={equipment.includes(opt.value)}
-                      onChange={() => toggleEquipment(opt.value)}
-                      className="pf-radio-input"
-                    />
-                    <span>{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-
-              <p className="pf-label mt-3 mb-1">Optional</p>
-              <div className="pf-radio-group" role="group" aria-label="Optional equipment">
-                {OPTIONAL_EQUIPMENT.map((opt) => (
-                  <label key={opt.value} className="pf-radio-option">
-                    <input
-                      type="checkbox"
-                      checked={equipment.includes(opt.value)}
-                      onChange={() => toggleEquipment(opt.value)}
-                      className="pf-radio-input"
-                    />
-                    <span>{opt.label}</span>
-                  </label>
-                ))}
-              </div>
             </div>
           </div>
         </section>

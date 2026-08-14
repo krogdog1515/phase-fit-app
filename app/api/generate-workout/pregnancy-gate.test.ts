@@ -295,3 +295,35 @@ describe("pregnancy focus — preference, never a gate", () => {
     expect(gp().focus).toBe("full_body");
   });
 });
+
+describe("pregnancy notes + equipment preset", () => {
+  const gp = () => workoutInsert()!.generation_params as Record<string, unknown>;
+
+  it("notes do NOT change which movements are eligible (same pool_slugs)", async () => {
+    const withNotes = await POST(req({ time: 40, equipment: [], notes: "prefer upper body, skip squats" }));
+    expect(withNotes.status).toBe(200);
+    const poolWith = gp().pool_slugs as string[];
+
+    state.inserts = [];
+    const without = await POST(req({ time: 40, equipment: [] }));
+    expect(without.status).toBe(200);
+    const poolWithout = gp().pool_slugs as string[];
+
+    expect([...poolWith].sort()).toEqual([...poolWithout].sort());
+    expect(gp().notes).toBeDefined();
+  });
+
+  it("resolves + persists the equipment preset (server-side), ignoring the sent array", async () => {
+    // Client sends a stale/empty array; the preset key wins server-side.
+    const res = await POST(req({ time: 40, equipment: [], equipmentPreset: "dumbbells_only" }));
+    expect(res.status).toBe(200);
+    expect(gp().equipment_preset).toBe("dumbbells_only");
+    expect(gp().equipment).toEqual(["chair", "wall", "dumbbell"]);
+  });
+
+  it("notes are capped at 500 chars in generation_params", async () => {
+    const long = "x".repeat(900);
+    await POST(req({ time: 40, equipment: [], notes: long }));
+    expect((gp().notes as string).length).toBe(500);
+  });
+});

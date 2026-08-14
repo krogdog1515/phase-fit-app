@@ -36,6 +36,10 @@ import {
   type FocusKey,
 } from "@/lib/movements/focusGroups";
 import { getIntensityCap } from "@/lib/stages/pregnancyStages";
+import {
+  isEquipmentPresetKey,
+  resolveEquipmentPreset,
+} from "@/lib/movements/equipmentPresets";
 import { evaluateRedFlags, type RedFlagAnswers } from "@/lib/safety/redFlags";
 import { isAcceptableClientDate } from "@/lib/dates";
 
@@ -234,6 +238,8 @@ export async function POST(req: Request) {
         user_id,
         time,
         equipment,
+        equipmentPreset: body.equipmentPreset,
+        notes,
         date,
         focus: body.focus,
         stageAnchorDate: modeProfile.stage_anchor_date,
@@ -414,6 +420,8 @@ async function handlePregnancyGeneration(opts: {
   user_id: string;
   time: unknown;
   equipment: unknown;
+  equipmentPreset: unknown;
+  notes: unknown;
   date: unknown;
   focus: unknown;
   stageAnchorDate: string | null;
@@ -424,9 +432,23 @@ async function handlePregnancyGeneration(opts: {
   if (!Number.isFinite(duration) || duration <= 0) {
     return NextResponse.json({ error: "Invalid session length" }, { status: 400 });
   }
-  const equipmentList = Array.isArray(opts.equipment)
-    ? opts.equipment.map((e) => String(e))
-    : [];
+
+  // Equipment: prefer the preset key (resolve server-side); else the sent array
+  // (regenerate / back-compat). The loaded floor still derives from the resolved
+  // array, so it's never guessable from free text.
+  const equipmentPresetKey = isEquipmentPresetKey(opts.equipmentPreset)
+    ? opts.equipmentPreset
+    : null;
+  const equipmentList = equipmentPresetKey
+    ? resolveEquipmentPreset(equipmentPresetKey)
+    : Array.isArray(opts.equipment)
+      ? opts.equipment.map((e) => String(e))
+      : [];
+
+  // HARD BOUNDARY: notes are coaching/selection PREFERENCE only. Never a safety
+  // signal, never relaxes a gate, never overrides the pool (same boundary as
+  // q4_detail). Capped; passed to the prompt, stored for the record.
+  const notes = typeof opts.notes === "string" ? opts.notes.slice(0, 500) : "";
 
   // 1. Most recent screening row. No row -> cannot proceed.
   const { data: screening } = await supabase
@@ -488,7 +510,7 @@ async function handlePregnancyGeneration(opts: {
   }
   const { data: checkin, error: checkinError } = await supabase
     .from("daily_checkins")
-    .select("red_flags")
+    .select("red_flags, energy, sleep_quality")
     .eq("user_id", user_id)
     .eq("date", opts.date)
     .maybeSingle();
@@ -514,6 +536,16 @@ async function handlePregnancyGeneration(opts: {
       { status: 409 }
     );
   }
+
+  // Today's energy + sleep are coaching CONTEXT only (tone/dosage within the
+  // band cap) — never a gate and never override rpeCeiling/rirFloor. Coerced to
+  // the stored 1-5 range or null.
+  const inRange1to5 = (v: unknown): number | null => {
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
+  };
+  const checkinEnergy = inRange1to5(checkin.energy);
+  const checkinSleep = inRange1to5(checkin.sleep_quality);
 
   // 3. Resolve the current stage band from the anchor date.
   const stage = resolvePregnancyStage(stageAnchorDate, new Date());
@@ -602,6 +634,9 @@ async function handlePregnancyGeneration(opts: {
     time: duration,
     priorActivityLevel: priorActivity,
     focus: focusContext,
+    energy: checkinEnergy,
+    sleepQuality: checkinSleep,
+    notes,
   });
 
   let structure: PregnancyStructureItem[] | null = null;
@@ -682,6 +717,8 @@ async function handlePregnancyGeneration(opts: {
       gestational_week: stage.gestationalWeek,
       prior_activity_level: priorActivity,
       equipment: equipmentList,
+      equipment_preset: equipmentPresetKey,
+      notes,
       pool_slugs: [...poolSlugs],
       source,
       // Focus is the picker key (distinct from `workout`, the session title).

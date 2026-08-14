@@ -43,6 +43,14 @@ export type PregnancyContext = {
     mode: "filter" | "preference" | "none";
     relaxStrengthFloor?: boolean;
   };
+  /** Today's check-in (1-5). Coaching context only — never overrides the cap. */
+  energy?: number | null;
+  sleepQuality?: number | null;
+  /**
+   * Free-text session notes. Coaching voice + selection PREFERENCE only — never a
+   * safety signal, never relaxes a gate, never changes the candidate list.
+   */
+  notes?: string | null;
 };
 
 /**
@@ -226,6 +234,19 @@ export function buildPregnancyUserMessage(
     ? `\n- Prior activity level: ${ctx.priorActivityLevel} (tune volume/intensity to this — do not patronize an active client, do not overload a sedentary one)`
     : "";
 
+  // Today's check-in energy + sleep: coaching context only, WITHIN the cap.
+  const checkin =
+    ctx.energy || ctx.sleepQuality
+      ? `\n- Today's check-in: ${ctx.energy ? `energy ${ctx.energy}/5` : "energy not given"}, ${ctx.sleepQuality ? `sleep ${ctx.sleepQuality}/5` : "sleep not given"} (let this shape tone and dosage WITHIN the prescription — it does NOT override the RPE ceiling, RIR floor, or any gate)`
+      : "";
+
+  // Free-text notes: coaching voice + selection PREFERENCE only. NEVER a safety
+  // signal, never relaxes a gate, never changes the candidate list below.
+  const notesBlock =
+    ctx.notes && ctx.notes.trim()
+      ? `\n\nSESSION NOTES (client's words — use for coaching voice and, at most, to PREFER among the candidates; NEVER a safety signal, never changes the list):\n"""\n${ctx.notes.trim()}\n"""`
+      : "";
+
   // Focus line. 'filter': pool is already narrowed. 'preference': full pool, but
   // emphasize the focus without dropping the mandated work.
   let focusLine = "";
@@ -239,13 +260,13 @@ export function buildPregnancyUserMessage(
 Client context (for coaching voice and dosage only):
 - Stage: ${band}
 - Gestational week: ${ctx.gestationalWeek}
-- Session length: ${ctx.time} minutes${activity}
+- Session length: ${ctx.time} minutes${activity}${checkin}
 
 WHY TODAY LOOKS THE WAY IT DOES (vetted — you may quote or paraphrase this, but do
 NOT add your own physiological claims):
 ${cap.coachingRationale}
 
-${prescriptionBlock(cap, loadedFloor, relax ? { label: ctx.focus?.label ?? "this" } : undefined)}${focusLine}
+${prescriptionBlock(cap, loadedFloor, relax ? { label: ctx.focus?.label ?? "this" } : undefined)}${focusLine}${notesBlock}
 
 CANDIDATE LIST — select and sequence from these ONLY, by slug:
 ${list}

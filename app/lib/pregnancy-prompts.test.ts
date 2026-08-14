@@ -202,6 +202,37 @@ describe("prompt content", () => {
     expect(msg).toContain("do NOT drop the mandated");
   });
 
+  it("renders today's check-in energy/sleep as within-cap context, omits when absent", () => {
+    const withCheckin = buildPregnancyUserMessage(POOL, {
+      stageKey: "t1_early",
+      gestationalWeek: 8,
+      time: 40,
+      energy: 2,
+      sleepQuality: 3,
+    });
+    expect(withCheckin).toContain("energy 2/5");
+    expect(withCheckin).toContain("sleep 3/5");
+    expect(withCheckin).toContain("does NOT override");
+
+    const without = buildPregnancyUserMessage(POOL, {
+      stageKey: "t1_early",
+      gestationalWeek: 8,
+      time: 40,
+    });
+    expect(without).not.toContain("Today's check-in");
+  });
+
+  it("renders notes as preference-only, never a safety signal", () => {
+    const msg = buildPregnancyUserMessage(POOL, {
+      stageKey: "t1_early",
+      gestationalWeek: 8,
+      time: 40,
+      notes: "knee twinge, prefer upper body",
+    });
+    expect(msg).toContain("knee twinge, prefer upper body");
+    expect(msg).toContain("NEVER a safety signal");
+  });
+
   it("relaxed strength floor (cardio/mobility filter) makes strength optional, no minimum", () => {
     const msg = buildPregnancyUserMessage(POOL, {
       stageKey: "t1_early",

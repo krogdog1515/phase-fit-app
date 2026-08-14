@@ -33,7 +33,14 @@ export type ParsedGenerationParams =
   | { kind: "cycle"; params: GenerationParams }
   | {
       kind: "pregnancy";
-      params: { time: number; equipment: string[]; stageKey: string; focus?: string };
+      params: {
+        time: number;
+        equipment: string[];
+        stageKey: string;
+        focus?: string;
+        equipmentPreset?: string;
+        notes?: string;
+      };
     };
 
 export function parseGenerationParams(raw: unknown): ParsedGenerationParams | null {
@@ -53,9 +60,12 @@ export function parseGenerationParams(raw: unknown): ParsedGenerationParams | nu
       : [];
     const stageKey = typeof o.stage_key === "string" ? o.stage_key : "";
     const focus = typeof o.focus === "string" ? o.focus : undefined;
+    const equipmentPreset =
+      typeof o.equipment_preset === "string" ? o.equipment_preset : undefined;
+    const notes = typeof o.notes === "string" ? o.notes : undefined;
     return {
       kind: "pregnancy",
-      params: { time: Math.round(duration), equipment, stageKey, focus },
+      params: { time: Math.round(duration), equipment, stageKey, focus, equipmentPreset, notes },
     };
   }
 
