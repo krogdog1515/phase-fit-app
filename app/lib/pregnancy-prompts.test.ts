@@ -301,11 +301,15 @@ describe("loaded-movement floor (equipment: dumbbell | band)", () => {
     mv({ slug: "edu1", category: "education" }),
   ];
 
-  it("isLoadedMovement detects dumbbell/band, ignores bodyweight", () => {
+  it("isLoadedMovement counts resistance load (dumbbell/band/cable/machine), not bike or bodyweight", () => {
     expect(isLoadedMovement(mv({ slug: "a", equipment: ["dumbbell"] }))).toBe(true);
     expect(isLoadedMovement(mv({ slug: "b", equipment: ["band", "mat"] }))).toBe(true);
+    expect(isLoadedMovement(mv({ slug: "cbl", equipment: ["cable"] }))).toBe(true);
+    expect(isLoadedMovement(mv({ slug: "mch", equipment: ["machine"] }))).toBe(true);
+    // bike is conditioning, not resistance — must NOT satisfy a strength floor.
+    expect(isLoadedMovement(mv({ slug: "bk", equipment: ["bike"] }))).toBe(false);
     expect(isLoadedMovement(mv({ slug: "c", equipment: [] }))).toBe(false);
-    expect(isLoadedMovement(mv({ slug: "d", equipment: ["mat"] }))).toBe(false);
+    expect(isLoadedMovement(mv({ slug: "d", equipment: ["chair"] }))).toBe(false);
   });
 
   it("an 'active' user with dumbbells available gets >= 2 loaded movements", () => {

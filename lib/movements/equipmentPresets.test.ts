@@ -27,18 +27,29 @@ describe("equipmentPresets", () => {
     });
   });
 
-  it("does not ship a Full gym preset yet", () => {
-    expect(EQUIPMENT_PRESET_OPTIONS).not.toContain("full_gym");
-    expect(EQUIPMENT_PRESET_OPTIONS).toHaveLength(3);
+  it("ships Full gym first, resolving to the full 8-value vocabulary", () => {
+    expect(EQUIPMENT_PRESET_OPTIONS).toHaveLength(4);
+    expect(EQUIPMENT_PRESET_OPTIONS[0]).toBe("full_gym");
+    expect(resolveEquipmentPreset("full_gym")).toEqual([
+      "chair",
+      "wall",
+      "band",
+      "dumbbell",
+      "bench",
+      "cable",
+      "machine",
+      "bike",
+    ]);
   });
 
-  it("defaults to the widest set (home_weights)", () => {
+  it("defaults to Home with weights (most days are home days), not Full gym", () => {
     expect(DEFAULT_EQUIPMENT_PRESET).toBe("home_weights");
   });
 
   it("guards unknown keys", () => {
     EQUIPMENT_PRESET_OPTIONS.forEach((k) => expect(isEquipmentPresetKey(k)).toBe(true));
-    expect(isEquipmentPresetKey("full_gym")).toBe(false);
+    expect(isEquipmentPresetKey("full_gym")).toBe(true);
+    expect(isEquipmentPresetKey("gym")).toBe(false);
     expect(isEquipmentPresetKey("")).toBe(false);
     expect(isEquipmentPresetKey(undefined)).toBe(false);
   });

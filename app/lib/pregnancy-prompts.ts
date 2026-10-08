@@ -147,10 +147,15 @@ const LOAD_GUIDANCE_TEXT: Record<IntensityCap["loadGuidance"], string> = {
   deload: "deload — noticeably lighter than usual, prioritise movement quality",
 };
 
-/** Equipment values that make a movement "loaded" (so load can be tracked). */
-const LOADED_EQUIPMENT = new Set(["dumbbell", "band"]);
+/**
+ * Equipment values that make a movement "loaded" — i.e. carry trackable,
+ * progressable resistance. dumbbell/band/cable/machine all count. `bike` does
+ * NOT: it's conditioning, not resistance, and counting it would let a cardio
+ * movement satisfy a strength floor.
+ */
+const LOADED_EQUIPMENT = new Set(["dumbbell", "band", "cable", "machine"]);
 
-/** A movement is loaded when its equipment includes a dumbbell or band. */
+/** A movement is loaded when its equipment includes resistance load. */
 export function isLoadedMovement(m: Movement): boolean {
   return (m.equipment ?? []).some((e) => LOADED_EQUIPMENT.has(e));
 }
@@ -207,7 +212,7 @@ function prescriptionBlock(
   }
   if (loadedFloor > 0) {
     lines.push(
-      `- At least ${loadedFloor} of those strength movements MUST be loaded (use a dumbbell or band).`,
+      `- At least ${loadedFloor} of those strength movements MUST be loaded (use a dumbbell, band, cable, or machine).`,
       "  Bodyweight strength alone does not satisfy this — load must be trackable and progressable.",
     );
   }
