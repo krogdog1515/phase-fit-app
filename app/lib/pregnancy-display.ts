@@ -45,6 +45,12 @@ export function buildPregnancyCoachingDisplay(input: {
   recentSessionCount?: number;
   /** Requested workout focus + whether it fell back to the full pool. */
   focus?: { label: string; fallback: boolean } | null;
+  /**
+   * One-line composition notice (floor make-up or pool-depth degradation) written
+   * by the generator into generation_params.notice. Surfaced verbatim so a
+   * degraded or lengthened session reads as explained, not broken.
+   */
+  notice?: string | null;
 }): CoachingDisplay {
   const cap = getIntensityCap(input.stageKey);
   const bandLabel = STAGE_BAND_LABELS[input.stageKey] ?? input.stageKey;
@@ -64,6 +70,11 @@ export function buildPregnancyCoachingDisplay(input: {
     noticed.push(
       `You asked for ${input.focus.label.toLowerCase()} — with the equipment you have today I've built around it rather than limiting to it.`,
     );
+  }
+  // Session-composition notice (floor make-up / pool-depth degradation). Shown
+  // for the same reason: a changed session she can't see the reason for is the bug.
+  if (input.notice && input.notice.trim()) {
+    noticed.push(input.notice.trim());
   }
 
   const [repMin, repMax] = cap.repRange;

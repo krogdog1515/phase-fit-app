@@ -296,6 +296,11 @@ export default function WorkoutPage() {
     pregFocusKey && pregFocusKey !== "full_body"
       ? { label: FOCUS_LABELS[pregFocusKey], fallback: pregParams.focus_fallback === true }
       : null;
+  // Session-composition notice (floor make-up / pool-depth degradation).
+  const pregNotice =
+    typeof pregParams.notice === "string" && pregParams.notice.trim()
+      ? pregParams.notice
+      : null;
   const pregnancyCoaching =
     isPregnancy && pregStageKey && Number.isFinite(pregWeek)
       ? buildPregnancyCoachingDisplay({
@@ -304,6 +309,7 @@ export default function WorkoutPage() {
           priorActivityLevel: pregActivity,
           recentSessionCount,
           focus: pregFocus,
+          notice: pregNotice,
         })
       : null;
 

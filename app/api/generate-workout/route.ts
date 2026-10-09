@@ -30,6 +30,10 @@ import {
   type PregnancyContext,
 } from "../../lib/pregnancy-prompts";
 import {
+  planPregnancySession,
+  composePregnancySession,
+} from "../../lib/pregnancy-composition";
+import {
   filterByFocus,
   isFocusKey,
   FOCUS_LABELS,
@@ -619,16 +623,42 @@ async function handlePregnancyGeneration(opts: {
     }
   }
 
-  const poolSlugs = new Set(pool.map((m) => m.slug));
-  const poolBySlug = new Map(pool.map((m) => [m.slug, m]));
+  // Education (warm-up / cool-down) is placed by the SERVER, never selected by
+  // the model (Change A). Split it out of the pool handed to the model, and
+  // resolve the two bookend rows. Prefer the split rows (warmup_general /
+  // cooldown_general); fall back to the legacy combined row for a pool that
+  // predates the split migration.
+  const bySlug = (slug: string): Movement | null =>
+    pool.find((m) => m.slug === slug) ?? null;
+  const warmupMovement = bySlug("warmup_general") ?? bySlug("warmup_cooldown_general");
+  const cooldownMovement = bySlug("cooldown_general") ?? bySlug("warmup_cooldown_general");
+  const modelPool = pool.filter((m) => m.category !== "education");
 
-  // Loaded-movement floor for validation, clamped to the pool. Relaxed focuses
-  // carry no loaded floor (kept consistent with the prompt).
-  const loadedFloor = focusFloorRelaxed ? 0 : loadedFloorFor(pool, cap, priorActivity);
+  // pool_slugs records the full vetted candidate set at generation time (incl.
+  // education) for provenance; the model only ever sees modelPool.
+  const poolSlugs = new Set(pool.map((m) => m.slug));
+  const modelPoolSlugs = new Set(modelPool.map((m) => m.slug));
+  const modelPoolBySlug = new Map(modelPool.map((m) => [m.slug, m]));
+
+  // Loaded-movement floor, clamped to the pool. Relaxed focuses carry none.
+  const loadedFloor = focusFloorRelaxed ? 0 : loadedFloorFor(modelPool, cap, priorActivity);
+
+  // Deterministic slot plan (typed strength counts + support slots). Composition
+  // is skipped for relaxed focuses (cardio / mobility), where strength is optional
+  // and the model's selection stands.
+  const useComposition = !focusFloorRelaxed;
+  const plan = planPregnancySession({
+    cap,
+    minutes: duration,
+    priorActivityLevel: priorActivity,
+    gestationalWeek: stage.gestationalWeek,
+    focusKey,
+    pool: modelPool,
+  });
 
   // 5. Constrained generation with one retry, then a deterministic fallback.
   const systemPrompt = buildPregnancySystemPrompt();
-  const userMessage = buildPregnancyUserMessage(pool, {
+  const userMessage = buildPregnancyUserMessage(modelPool, {
     stageKey: stage.stageKey,
     gestationalWeek: stage.gestationalWeek,
     time: duration,
@@ -637,6 +667,9 @@ async function handlePregnancyGeneration(opts: {
     energy: checkinEnergy,
     sleepQuality: checkinSleep,
     notes,
+    plan: useComposition ? plan : undefined,
+    focusKey,
+    equipmentList,
   });
 
   let structure: PregnancyStructureItem[] | null = null;
@@ -644,6 +677,29 @@ async function handlePregnancyGeneration(opts: {
   let focus = "Gentle pregnancy session";
   let intensity = "Easy, breath-led";
   let why = "A safe, gentle session for your current stage.";
+  let repairs: string[] = [];
+  let tierDegraded = useComposition ? plan.tierDegraded : false;
+  let degradeReason = useComposition ? plan.degradeReason : null;
+  const notice = useComposition ? plan.notice : null;
+
+  // Server-placed warm-up first, body, server-placed cool-down last (Change A).
+  const educationItem = (m: Movement | null): PregnancyStructureItem | null =>
+    m
+      ? {
+          slug: m.slug,
+          movement: m.name,
+          category: "education",
+          sets: 0,
+          reps: "",
+          durationSeconds: 0,
+          intensity: "",
+          note: m.cues ?? "",
+        }
+      : null;
+  const bookend = (body: PregnancyStructureItem[]): PregnancyStructureItem[] =>
+    [educationItem(warmupMovement), ...body, educationItem(cooldownMovement)].filter(
+      (x): x is PregnancyStructureItem => x !== null,
+    );
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const completion = await openai.chat.completions.create({
@@ -660,25 +716,58 @@ async function handlePregnancyGeneration(opts: {
     } catch {
       continue;
     }
-    // 6. Validate: every slug in the pool AND the loaded-movement floor met.
-    //    Fail closed otherwise (retry once, then deterministic fallback).
-    if (!validatePregnancyWorkout(parsed, poolSlugs, { poolBySlug, loadedFloor }).valid) {
-      continue;
+    // 6. Validate slug integrity + reject any education movement (warm-up /
+    //    cool-down are server-placed). Structural rules (Changes B–E) are NOT a
+    //    reject reason — they are repaired below. Fail closed on bad slugs only
+    //    (retry once, then deterministic fallback).
+    const v = validatePregnancyWorkout(parsed, modelPoolSlugs, {
+      poolBySlug: modelPoolBySlug,
+    });
+    if (!v.valid) continue;
+
+    let body: PregnancyStructureItem[];
+    if (useComposition) {
+      const composed = composePregnancySession(v.slugs, modelPool, plan, {
+        focusKey,
+        equipmentList,
+        loadedFloor,
+      });
+      if (composed.movements.length === 0) continue; // nothing usable; retry/fallback
+
+      // Resolve the composed body using the model's numbers where it chose a slug,
+      // band-dosing anything the server added.
+      const modelRawBySlug = new Map<string, Record<string, unknown>>();
+      const rawStructure = Array.isArray(parsed.structure)
+        ? (parsed.structure as Array<Record<string, unknown>>)
+        : [];
+      for (const raw of rawStructure) {
+        const s = typeof raw.slug === "string" ? raw.slug : "";
+        if (s && !modelRawBySlug.has(s)) modelRawBySlug.set(s, raw);
+      }
+      body = resolveStructure(
+        { structure: composed.movements.map((m) => modelRawBySlug.get(m.slug) ?? { slug: m.slug }) },
+        modelPoolBySlug,
+        cap,
+      );
+      repairs = composed.repairs;
+      tierDegraded = composed.tierDegraded;
+      degradeReason = composed.degradeReason;
+    } else {
+      // Relaxed focus: the model's (validated, education-free) selection stands.
+      body = resolveStructure(parsed, modelPoolBySlug, cap);
     }
-    structure = resolveStructure(parsed, poolBySlug);
-    if (structure.length === 0) {
-      structure = null;
-      continue;
-    }
+    if (body.length === 0) continue;
+
+    structure = bookend(body);
     if (typeof parsed.focus === "string") focus = parsed.focus;
     if (typeof parsed.intensity === "string") intensity = parsed.intensity;
     if (typeof parsed.why === "string") why = parsed.why;
     break;
   }
 
-  // Second violation -> deterministic safe session from the pool. Log it.
+  // Second violation -> deterministic safe session from the pool, bookended. Log it.
   if (!structure || structure.length === 0) {
-    const canned = buildCannedSession(pool, {
+    const canned = buildCannedSession(modelPool, {
       time: duration,
       context: {
         stageKey: stage.stageKey,
@@ -688,7 +777,7 @@ async function handlePregnancyGeneration(opts: {
         focus: focusContext,
       },
     });
-    structure = canned.structure;
+    structure = bookend(canned.structure);
     focus = canned.focus;
     intensity = canned.intensity;
     why = canned.why;
@@ -725,6 +814,22 @@ async function handlePregnancyGeneration(opts: {
       focus: focusKey,
       focus_fallback: focusFallback,
       focus_floor_relaxed: focusFloorRelaxed,
+      // Typed-slot composition record (Changes B–E). Null for relaxed focuses.
+      strength_slots: useComposition
+        ? {
+            compounds: plan.compounds,
+            accessories: plan.accessories,
+            total: plan.totalStrength,
+            desired_compounds: plan.desiredCompounds,
+            desired_total: plan.desiredTotal,
+            floor: plan.floor,
+            floor_applied: plan.floorApplied,
+          }
+        : null,
+      tier_degraded: tierDegraded,
+      degrade_reason: degradeReason,
+      repairs,
+      notice,
     },
   };
 

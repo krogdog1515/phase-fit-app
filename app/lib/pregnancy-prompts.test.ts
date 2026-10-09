@@ -10,6 +10,7 @@ import {
 } from "./pregnancy-prompts";
 import type { Movement } from "@/lib/movements/types";
 import { getIntensityCap } from "@/lib/stages/pregnancyStages";
+import { planPregnancySession } from "./pregnancy-composition";
 
 function mv(over: Partial<Movement> & Pick<Movement, "slug">): Movement {
   return {
@@ -20,6 +21,8 @@ function mv(over: Partial<Movement> & Pick<Movement, "slug">): Movement {
     focus_tags: [],
     equipment: [],
     exclusion_flags: [],
+    movement_pattern: "none",
+    movement_tier: "none",
     cues: "a cue",
     modifications: null,
     benefit: null,
@@ -74,6 +77,30 @@ describe("validatePregnancyWorkout", () => {
       POOL_SLUGS,
     );
     expect(r.valid).toBe(false);
+  });
+
+  it("rejects model output containing an education movement (warm-up is server-placed)", () => {
+    const poolBySlug = new Map(POOL.map((m) => [m.slug, m]));
+    const parsed = {
+      structure: [
+        { slug: "glute_bridge" },
+        { slug: "warmup_cooldown_general" }, // education — must be rejected
+      ],
+    };
+    const r = validatePregnancyWorkout(parsed, POOL_SLUGS, { poolBySlug });
+    expect(r.hasEducation).toBe(true);
+    expect(r.valid).toBe(false);
+  });
+
+  it("a session with no education movement is not flagged", () => {
+    const poolBySlug = new Map(POOL.map((m) => [m.slug, m]));
+    const r = validatePregnancyWorkout(
+      { structure: [{ slug: "glute_bridge" }, { slug: "pelvic_floor_activation" }] },
+      POOL_SLUGS,
+      { poolBySlug },
+    );
+    expect(r.hasEducation).toBe(false);
+    expect(r.valid).toBe(true);
   });
 });
 
@@ -231,6 +258,53 @@ describe("prompt content", () => {
     });
     expect(msg).toContain("knee twinge, prefer upper body");
     expect(msg).toContain("NEVER a safety signal");
+  });
+
+  it("with a slot plan, tells the model warm-up/cool-down are already placed and states typed slots", () => {
+    const plan = planPregnancySession({
+      cap: getIntensityCap("t2_golden"),
+      minutes: 40,
+      priorActivityLevel: "active",
+      gestationalWeek: 17,
+      focusKey: "upper_body",
+      pool: [
+        mv({ slug: "c1", movement_tier: "compound", movement_pattern: "push" }),
+        mv({ slug: "c2", movement_tier: "compound", movement_pattern: "pull" }),
+        mv({ slug: "a1", movement_tier: "accessory", movement_pattern: "isolation" }),
+        mv({ slug: "a2", movement_tier: "accessory", movement_pattern: "pull" }),
+      ],
+    });
+    const msg = buildPregnancyUserMessage(POOL, {
+      stageKey: "t2_golden",
+      gestationalWeek: 17,
+      time: 40,
+      plan,
+      focusKey: "upper_body",
+      equipmentList: ["chair", "wall", "band", "dumbbell", "bench", "cable", "machine", "bike"],
+    });
+    expect(msg).toContain("ALREADY included");
+    expect(msg).toContain("Do NOT add a warm-up");
+    expect(msg).toContain("COMPOUND");
+    expect(msg).toContain("ACCESSORY");
+    expect(msg).toContain("PUSH and one PULL");
+    expect(msg).toContain("cable/machine");
+    // The typed-slot block replaces the old "Include between" phrasing.
+    expect(msg).not.toContain("Include between");
+  });
+
+  it("candidate lines expose tier/pattern/equipment for strength movements", () => {
+    const pool = [
+      mv({ slug: "db_press", category: "strength", movement_tier: "compound", movement_pattern: "push", equipment: ["dumbbell"] }),
+      mv({ slug: "breath", category: "breathing" }),
+    ];
+    const msg = buildPregnancyUserMessage(pool, {
+      stageKey: "t2_golden",
+      gestationalWeek: 17,
+      time: 40,
+    });
+    expect(msg).toContain("[compound, pattern: push, equipment: dumbbell]");
+    // Non-strength movements carry no tier/pattern tag.
+    expect(msg).toContain("breath — Name of breath (breathing)");
   });
 
   it("relaxed strength floor (cardio/mobility filter) makes strength optional, no minimum", () => {

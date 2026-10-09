@@ -7,6 +7,8 @@ import type {
 } from "@/lib/stages/pregnancyStages";
 import { getIntensityCap } from "@/lib/stages/pregnancyStages";
 import { STAGE_BAND_LABELS } from "./pregnancy-display";
+import { patternOf, tierOf, type SlotPlan } from "./pregnancy-composition";
+import type { FocusKey } from "@/lib/movements/focusGroups";
 
 /**
  * Pregnancy workout prompting + fail-closed validation.
@@ -51,6 +53,17 @@ export type PregnancyContext = {
    * safety signal, never relaxes a gate, never changes the candidate list.
    */
   notes?: string | null;
+  /**
+   * The deterministic slot plan for this session (typed strength counts, support
+   * slots). When present, the prompt states it so the model usually complies; the
+   * server enforces it regardless (composePregnancySession). Absent -> the old
+   * "include N–M strength movements" phrasing.
+   */
+  plan?: SlotPlan;
+  /** Resolved equipment set, so the prompt can state the utilization rule. */
+  equipmentList?: string[];
+  /** Focus picker key, so the prompt can state the pattern-balance rule. */
+  focusKey?: FocusKey;
 };
 
 /**
@@ -133,7 +146,15 @@ ${PREGNANCY_JSON_SCHEMA}
 
 /** Render one candidate line for the prompt. Free text is the vetted library's only. */
 function candidateLine(m: Movement): string {
-  const bits = [`- ${m.slug} — ${m.name} (${m.category})`];
+  // Strength lines expose tier / pattern / equipment so the model can satisfy the
+  // typed slots, pattern balance, redundancy and equipment-utilization rules.
+  const tag =
+    m.category === "strength"
+      ? ` [${tierOf(m)}, pattern: ${patternOf(m)}, ${
+          m.equipment.length ? `equipment: ${m.equipment.join("/")}` : "bodyweight"
+        }]`
+      : "";
+  const bits = [`- ${m.slug} — ${m.name} (${m.category})${tag}`];
   if (m.cues) bits.push(`  cues: ${m.cues}`);
   if (m.modifications) bits.push(`  modifications: ${m.modifications}`);
   if (m.benefit) bits.push(`  benefit: ${m.benefit}`);
@@ -187,16 +208,32 @@ export function loadedFloorFor(
   return Math.min(target, available);
 }
 
+/** Pattern-balance requirement per focus, mirrored from composePregnancySession. */
+function requiredPatternsText(focusKey: FocusKey | undefined): string | null {
+  if (focusKey === "upper_body")
+    return "At least one PUSH and one PULL movement (see each candidate's pattern).";
+  if (focusKey === "lower_body")
+    return "At least one SQUAT and one HINGE movement where the list allows.";
+  return null;
+}
+
 /** The band's vetted training prescription, rendered as hard prompt constraints. */
 function prescriptionBlock(
   cap: IntensityCap,
   loadedFloor: number,
-  relaxStrength?: { label: string },
+  opts: {
+    relaxStrength?: { label: string };
+    plan?: SlotPlan;
+    focusKey?: FocusKey;
+    equipmentList?: string[];
+  } = {},
 ): string {
+  const { relaxStrength, plan, focusKey, equipmentList } = opts;
   const [strMin, strMax] = cap.strengthMovementTarget;
   const [setMin, setMax] = cap.setsPerMovement;
   const [repMin, repMax] = cap.repRange;
   const lines = ["TRAINING PRESCRIPTION — HARD CONSTRAINTS (do not exceed):"];
+
   if (relaxStrength) {
     // Cardio / mobility focus: the user's explicit choice lifts the strength
     // minimum. Strength is optional this session; the RPE/RIR ceilings still hold.
@@ -204,18 +241,30 @@ function prescriptionBlock(
       `- The client chose a ${relaxStrength.label} focus. Build around that; strength-category`,
       "  movements are OPTIONAL this session (no strength minimum).",
     );
+  } else if (plan) {
+    // Typed slots. The warm-up and cool-down are placed by the app, not the model.
+    lines.push(
+      "- The warm-up and cool-down are ALREADY included by the app. Do NOT add a warm-up,",
+      "  cool-down, or any education-category movement.",
+      `- Choose exactly ${plan.compounds} COMPOUND and ${plan.accessories} ACCESSORY strength movement(s)`,
+      "  (each candidate is tagged [compound] or [accessory]). This is a real training session.",
+      "- Choose 1 pelvic-floor OR breathing movement.",
+    );
+    if (plan.mobility > 0) lines.push("- Choose 1 mobility movement.");
   } else {
     lines.push(
       `- Include between ${strMin} and ${strMax} strength-category movements. This is a real training`,
       "  session, not a mobility flow — do not default to gentleness.",
     );
   }
+
   if (loadedFloor > 0) {
     lines.push(
       `- At least ${loadedFloor} of those strength movements MUST be loaded (use a dumbbell, band, cable, or machine).`,
       "  Bodyweight strength alone does not satisfy this — load must be trackable and progressable.",
     );
   }
+
   lines.push(
     `- Set-based movements: ${setMin}-${setMax} sets, ${repMin}-${repMax} reps.`,
     `- Effort ceiling: RPE ${cap.rpeCeiling}/10 — NEVER exceed it. Finish every set with at least`,
@@ -223,6 +272,27 @@ function prescriptionBlock(
     `- Load: ${LOAD_GUIDANCE_TEXT[cap.loadGuidance]}.`,
     "- For anything aerobic, gauge effort with the talk test (able to hold a conversation), not a number.",
   );
+
+  // Structural rules for the strength movements (Changes C–E). Stated here so the
+  // model usually complies; enforced deterministically server-side regardless.
+  if (plan) {
+    lines.push(
+      "- Do NOT pick two strength movements that share BOTH the same pattern AND a piece of",
+      "  equipment (e.g. two dumbbell presses). Use no more than two movements of any one pattern.",
+    );
+    const patterns = requiredPatternsText(focusKey);
+    if (patterns) lines.push(`- ${patterns}`);
+    const utilAvailable =
+      !!equipmentList &&
+      (equipmentList.includes("cable") || equipmentList.includes("machine"));
+    if (utilAvailable) {
+      lines.push(
+        "- You have cable/machine equipment: use it for at least half of the strength movements",
+        "  (prefer the most capable equipment available rather than bodyweight or wall work).",
+      );
+    }
+  }
+
   return lines.join("\n");
 }
 
@@ -271,7 +341,12 @@ WHY TODAY LOOKS THE WAY IT DOES (vetted — you may quote or paraphrase this, bu
 NOT add your own physiological claims):
 ${cap.coachingRationale}
 
-${prescriptionBlock(cap, loadedFloor, relax ? { label: ctx.focus?.label ?? "this" } : undefined)}${focusLine}${notesBlock}
+${prescriptionBlock(cap, loadedFloor, {
+  relaxStrength: relax ? { label: ctx.focus?.label ?? "this" } : undefined,
+  plan: ctx.plan,
+  focusKey: ctx.focusKey,
+  equipmentList: ctx.equipmentList,
+})}${focusLine}${notesBlock}
 
 CANDIDATE LIST — select and sequence from these ONLY, by slug:
 ${list}
@@ -297,6 +372,7 @@ export function validatePregnancyWorkout(
   badSlugs: string[];
   loadedCount: number;
   belowLoadedFloor: boolean;
+  hasEducation: boolean;
 } {
   const structure =
     parsed && typeof parsed === "object" && Array.isArray((parsed as Record<string, unknown>).structure)
@@ -304,7 +380,7 @@ export function validatePregnancyWorkout(
       : [];
 
   if (structure.length === 0) {
-    return { valid: false, slugs: [], badSlugs: [], loadedCount: 0, belowLoadedFloor: false };
+    return { valid: false, slugs: [], badSlugs: [], loadedCount: 0, belowLoadedFloor: false, hasEducation: false };
   }
 
   const slugs: string[] = [];
@@ -324,22 +400,30 @@ export function validatePregnancyWorkout(
   // Loaded-movement floor: count loaded movements among the valid slugs. Below
   // the floor fails closed, exactly like an out-of-pool slug, so the caller runs
   // the retry-then-fallback path.
+  //
+  // Education rejection (Change A): the warm-up and cool-down are placed by the
+  // server, never selected by the model. A model response that includes ANY
+  // education-category movement fails closed so the server owns that structure.
   let loadedCount = 0;
+  let hasEducation = false;
   if (opts?.poolBySlug) {
     for (const slug of slugs) {
       const m = opts.poolBySlug.get(slug);
-      if (m && isLoadedMovement(m)) loadedCount++;
+      if (!m) continue;
+      if (isLoadedMovement(m)) loadedCount++;
+      if (m.category === "education") hasEducation = true;
     }
   }
   const floor = opts?.loadedFloor ?? 0;
   const belowLoadedFloor = floor > 0 && loadedCount < floor;
 
   return {
-    valid: badSlugs.length === 0 && !belowLoadedFloor,
+    valid: badSlugs.length === 0 && !belowLoadedFloor && !hasEducation,
     slugs,
     badSlugs,
     loadedCount,
     belowLoadedFloor,
+    hasEducation,
   };
 }
 
@@ -492,6 +576,7 @@ export function buildCannedSession(
 export function resolveStructure(
   parsed: unknown,
   poolBySlug: Map<string, Movement>,
+  cap?: IntensityCap,
 ): PregnancyStructureItem[] {
   const structure =
     parsed && typeof parsed === "object" && Array.isArray((parsed as Record<string, unknown>).structure)
@@ -513,14 +598,25 @@ export function resolveStructure(
     const modelIntensity =
       typeof raw.intensity === "string" && raw.intensity.trim() ? raw.intensity.trim() : null;
 
+    // Strength items express the band prescription by default (same as the canned
+    // path) so a SERVER-ADDED strength movement — one the model didn't dose — is
+    // still dosed to the band, not the generic category spec. Model numbers win
+    // when present.
+    const strengthDosed = cap && m.category === "strength";
+    const defaultSets = strengthDosed ? cap!.setsPerMovement[0] : spec.sets;
+    const defaultReps = strengthDosed ? `${cap!.repRange[0]}-${cap!.repRange[1]}` : spec.reps;
+    const defaultIntensity = strengthDosed
+      ? `RPE ${cap!.rpeCeiling}, keep ${cap!.rirFloor}+ reps in reserve`
+      : spec.intensity;
+
     items.push({
       slug: m.slug,
       movement: m.name,
       category: m.category,
-      sets: setBased ? positiveInt(raw.sets) ?? spec.sets : 0,
-      reps: setBased ? modelReps ?? spec.reps : "",
+      sets: setBased ? positiveInt(raw.sets) ?? defaultSets : 0,
+      reps: setBased ? modelReps ?? defaultReps : "",
       durationSeconds: setBased ? 0 : positiveInt(raw.duration_seconds) ?? spec.durationSeconds,
-      intensity: modelIntensity ?? spec.intensity,
+      intensity: modelIntensity ?? defaultIntensity,
       note: typeof raw.note === "string" ? raw.note : m.cues ?? "",
     });
   }

@@ -12,6 +12,8 @@ function mv(over: Partial<Movement> & Pick<Movement, 'slug'>): Movement {
     focus_tags: [],
     equipment: [],
     exclusion_flags: [],
+    movement_pattern: 'none',
+    movement_tier: 'none',
     cues: null,
     modifications: null,
     benefit: null,
