@@ -823,7 +823,9 @@ async function handlePregnancyGeneration(opts: {
             desired_compounds: plan.desiredCompounds,
             desired_total: plan.desiredTotal,
             floor: plan.floor,
+            ceiling: plan.ceiling,
             floor_applied: plan.floorApplied,
+            ceiling_applied: plan.ceilingApplied,
           }
         : null,
       tier_degraded: tierDegraded,

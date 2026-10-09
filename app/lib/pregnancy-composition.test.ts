@@ -116,6 +116,53 @@ describe("planPregnancySession — Change B slot table", () => {
     expect(plan.accessories).toBe(2);
   });
 
+  it("clamps DOWN to the band ceiling at t3_early (active + 60 does not exceed 4)", () => {
+    const plan = planPregnancySession({
+      cap: getIntensityCap("t3_early"), // strengthMovementTarget [3, 4]
+      minutes: 60, // table active = 3C + 2A = 5, over the ceiling of 4
+      priorActivityLevel: "active",
+      gestationalWeek: 30,
+      focusKey: "upper_body",
+      pool: deep,
+    });
+    expect(plan.totalStrength).toBe(4); // ceiling, not 5
+    expect(plan.compounds).toBe(3); // accessories dropped first
+    expect(plan.accessories).toBe(1);
+    expect(plan.ceilingApplied).toBe(true);
+    expect(plan.floorApplied).toBe(false);
+  });
+
+  it("clamps DOWN to the band ceiling at t3_late (active + 60 does not exceed 3)", () => {
+    const plan = planPregnancySession({
+      cap: getIntensityCap("t3_late"), // strengthMovementTarget [2, 3]
+      minutes: 60, // table active = 3C + 2A = 5, over the ceiling of 3
+      priorActivityLevel: "active",
+      gestationalWeek: 36,
+      focusKey: "upper_body",
+      pool: deep,
+    });
+    expect(plan.totalStrength).toBe(3); // ceiling, not 5
+    expect(plan.compounds).toBe(3); // accessories dropped first, compounds kept
+    expect(plan.accessories).toBe(0);
+    expect(plan.ceilingApplied).toBe(true);
+  });
+
+  it("surfaces a notice on a downward (ceiling) clamp", () => {
+    const plan = planPregnancySession({
+      cap: getIntensityCap("t3_late"),
+      minutes: 60,
+      priorActivityLevel: "active",
+      gestationalWeek: 36,
+      focusKey: "upper_body",
+      pool: deep,
+    });
+    expect(plan.notice).toBeTruthy();
+    expect(plan.notice).toContain("shorter");
+    expect(plan.notice).toContain("36");
+    // Not the floor (upward) notice.
+    expect(plan.notice).not.toContain("minimum");
+  });
+
   it("raises the total to the band floor and surfaces a notice (floor rule)", () => {
     const plan = planPregnancySession({
       cap: getIntensityCap("t2_golden"), // floor 4

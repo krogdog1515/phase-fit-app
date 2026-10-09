@@ -141,8 +141,12 @@ export type SlotPlan = {
   desiredTotal: number;
   /** The band's per-session strength floor (strengthMovementTarget[0]). */
   floor: number;
-  /** True when the floor raised the total above the table (Change B floor rule). */
+  /** The band's per-session strength ceiling (strengthMovementTarget[1]). */
+  ceiling: number;
+  /** True when the floor raised the total above the table (clamped up). */
   floorApplied: boolean;
+  /** True when the band ceiling lowered the total below the table (clamped down). */
+  ceilingApplied: boolean;
   /** True when pool depth forced fewer/forced-identical strength than desired. */
   tierDegraded: boolean;
   /** Why we degraded, for generation_params. */
@@ -168,14 +172,28 @@ export function planPregnancySession(opts: {
   const tier = activityTier(priorActivityLevel);
   const bucket = durationBucket(minutes);
   const [baseC, baseA] = STRENGTH_SLOT_TABLE[tier][bucket];
-  const floor = cap.strengthMovementTarget[0];
+  const [floor, ceiling] = cap.strengthMovementTarget;
+  const baseTotal = baseC + baseA;
 
-  // Floor interaction: the band's per-session floor is a MINIMUM. When it
-  // exceeds the table, add accessory slots to make up the difference.
-  const desiredCompounds = baseC;
-  const desiredTotal = Math.max(baseC + baseA, floor);
-  const desiredAccessories = desiredTotal - desiredCompounds;
-  const floorApplied = desiredTotal > baseC + baseA;
+  // Floor/ceiling interaction: strengthMovementTarget is [min, max] and BOTH
+  // bind. Clamp the table total into that band. Clamping UP (below the floor)
+  // makes up the difference with accessory slots; clamping DOWN (over the band
+  // ceiling — e.g. an active user at 60 min in late pregnancy) drops accessory
+  // slots first, then compounds, so the ceiling holds where it matters most.
+  const desiredTotal = Math.min(Math.max(baseTotal, floor), ceiling);
+  let desiredCompounds: number;
+  let desiredAccessories: number;
+  if (desiredTotal >= baseTotal) {
+    desiredCompounds = baseC;
+    desiredAccessories = desiredTotal - baseC;
+  } else {
+    const remove = baseTotal - desiredTotal;
+    const dropAccessories = Math.min(remove, baseA);
+    desiredAccessories = baseA - dropAccessories;
+    desiredCompounds = baseC - (remove - dropAccessories);
+  }
+  const floorApplied = desiredTotal > baseTotal;
+  const ceilingApplied = desiredTotal < baseTotal;
 
   // Pool depth. A strength row with an unexpected tier (should never happen —
   // every strength row is backfilled compound|accessory) is counted as an
@@ -231,8 +249,9 @@ export function planPregnancySession(opts: {
       `forced selection: ${availTotal} strength movements for ${totalStrength} slots (no slack)`;
   }
 
-  // User-visible notice. A pool-depth degrade is the more important thing to say;
-  // otherwise surface the floor make-up.
+  // User-visible notice (single notice path). A pool-depth degrade is the most
+  // important thing to say; otherwise surface the floor make-up or the ceiling
+  // clamp so a lengthened or shortened session reads as explained.
   let notice: string | null = null;
   if (shortOfDesired) {
     notice =
@@ -242,6 +261,10 @@ export function planPregnancySession(opts: {
     notice =
       `Week ${gestationalWeek} has a ${floor}-movement strength minimum, ` +
       `so this session runs a little longer than ${minutes} minutes.`;
+  } else if (ceilingApplied) {
+    notice =
+      `Week ${gestationalWeek} caps strength work at ${ceiling} movements this far along, ` +
+      `so this session is a little shorter than a full ${minutes} minutes.`;
   }
 
   return {
@@ -255,7 +278,9 @@ export function planPregnancySession(opts: {
     desiredCompounds,
     desiredTotal,
     floor,
+    ceiling,
     floorApplied,
+    ceilingApplied,
     tierDegraded,
     degradeReason,
     notice,
